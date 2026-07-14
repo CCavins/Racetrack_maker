@@ -218,6 +218,12 @@ export function Vehicle({
   const boostRef = useRef(0)
   const oilSpinRef = useRef(0)
   const oilAngleRef = useRef(0)
+  const waterLatRef = useRef(0)
+  const waterVelRef = useRef(0)
+  const waterYawRef = useRef(0)
+  const waterYawTargetRef = useRef(0)
+  const waterTimerRef = useRef(0)
+  const waterCooldownRef = useRef(0)
   const airYRef = useRef(0)
   const airVelRef = useRef(0)
   const wasAirborne = useRef(false)
@@ -268,6 +274,9 @@ export function Vehicle({
     if (hitSlowRef.current > 0) hitSlowRef.current = Math.max(0, hitSlowRef.current - delta)
     if (hitCooldownRef.current > 0) hitCooldownRef.current = Math.max(0, hitCooldownRef.current - delta)
     if (shakeRef.current > 0) shakeRef.current = Math.max(0, shakeRef.current - delta)
+    if (waterCooldownRef.current > 0) {
+      waterCooldownRef.current = Math.max(0, waterCooldownRef.current - delta)
+    }
     hitSpinRef.current *= Math.pow(0.82, delta * 60)
     hitLatVelRef.current *= Math.pow(0.86, delta * 60)
 
@@ -276,6 +285,7 @@ export function Vehicle({
 
     // Decal effects (boost / oil / water) by world proximity
     let onOil = false
+    let onWater = false
     for (const d of track.decals) {
       const dist = lookAhead.distanceTo(d.position)
       const reach = d.kind === 'boost' ? 2.6 : d.kind === 'oil' ? 2.2 : 2.0
@@ -283,22 +293,64 @@ export function Vehicle({
         if (d.kind === 'boost') boostRef.current = Math.max(boostRef.current, 1.4)
         if (d.kind === 'oil') {
           onOil = true
-          oilSpinRef.current = Math.max(oilSpinRef.current, 2.1)
+          oilSpinRef.current = Math.max(oilSpinRef.current, 1.45)
         }
         if (d.kind === 'water') {
-          weaveRef.current += 0.55 * delta
+          onWater = true
         }
       }
+    }
+
+    // Water: sideways slide + small skid angle (not oil-style full rotations)
+    if (onWater && waterCooldownRef.current <= 0) {
+      const side =
+        Math.abs(waterLatRef.current) > 0.08
+          ? Math.sign(waterLatRef.current)
+          : Math.random() < 0.5
+            ? -1
+            : 1
+      waterVelRef.current = side * (2.2 + Math.random() * 1.0)
+      // ~18–32° yaw into the slide — readable, never a spin
+      waterYawTargetRef.current = side * (0.32 + Math.random() * 0.24)
+      waterTimerRef.current = Math.max(
+        waterTimerRef.current,
+        0.95 + Math.random() * 0.4,
+      )
+      waterCooldownRef.current = 1.4
+    } else if (onWater && waterTimerRef.current > 0) {
+      waterTimerRef.current = Math.max(waterTimerRef.current, 0.3)
+    }
+
+    if (waterTimerRef.current > 0) {
+      waterTimerRef.current = Math.max(0, waterTimerRef.current - delta)
+      waterLatRef.current += waterVelRef.current * delta
+      waterVelRef.current *= Math.pow(0.9, delta * 60)
+      waterYawRef.current = THREE.MathUtils.damp(
+        waterYawRef.current,
+        waterYawTargetRef.current,
+        7,
+        delta,
+      )
+      const maxSlide = ROAD_HALF - 0.35
+      if (Math.abs(waterLatRef.current) > maxSlide) {
+        waterLatRef.current = Math.sign(waterLatRef.current) * maxSlide
+        waterVelRef.current *= 0.3
+      }
+    } else {
+      waterYawTargetRef.current = 0
+      waterLatRef.current = THREE.MathUtils.damp(waterLatRef.current, 0, 3.2, delta)
+      waterVelRef.current = THREE.MathUtils.damp(waterVelRef.current, 0, 5, delta)
+      waterYawRef.current = THREE.MathUtils.damp(waterYawRef.current, 0, 4.5, delta)
     }
 
     // Oil: keep spinning in circles while the spinout lasts
     if (oilSpinRef.current > 0) {
       oilSpinRef.current = Math.max(0, oilSpinRef.current - delta)
-      // ~1.15 full rotations per second while sliding
-      const spinRate = Math.PI * 2.3 * (0.55 + Math.min(1, oilSpinRef.current))
+      // ~0.9 full rotations per second — about one fewer spin than before
+      const spinRate = Math.PI * 1.7 * (0.5 + Math.min(1, oilSpinRef.current))
       oilAngleRef.current += spinRate * delta
       // Keep topping up briefly while still on the slick
-      if (onOil) oilSpinRef.current = Math.max(oilSpinRef.current, 1.4)
+      if (onOil) oilSpinRef.current = Math.max(oilSpinRef.current, 0.85)
     } else {
       // Settle facing forward again (shortest way)
       let a = ((oilAngleRef.current + Math.PI) % (Math.PI * 2)) - Math.PI
@@ -399,7 +451,8 @@ export function Vehicle({
       avoidLatRef.current +
       weave +
       hitLatVelRef.current +
-      oilSlide
+      oilSlide +
+      waterLatRef.current
 
     const clampedLateral = THREE.MathUtils.clamp(
       lateral,
@@ -512,13 +565,18 @@ export function Vehicle({
     dummy.lookAt(lookTarget)
 
     if (wasAirborne.current) dummy.rotateX(-0.2)
-    dummy.rotateY(hitSpinRef.current * 0.035 + oilAngleRef.current)
+    dummy.rotateY(
+      hitSpinRef.current * 0.035 + oilAngleRef.current + waterYawRef.current,
+    )
     if (shakeRef.current > 0) {
       dummy.rotateZ(Math.sin(state.clock.elapsedTime * 28) * 0.045 * shakeRef.current)
     }
     if (onOilSpin) {
       // Slight tilt while spinning out
       dummy.rotateZ(Math.sin(oilAngleRef.current) * 0.12)
+    } else if (Math.abs(waterYawRef.current) > 0.02) {
+      // Bank slightly into the water skid
+      dummy.rotateZ(-waterYawRef.current * 0.45)
     }
 
     if (!motionReadyRef.current) {
