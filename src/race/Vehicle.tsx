@@ -171,6 +171,8 @@ export function Vehicle({
   const airYRef = useRef(0)
   const airVelRef = useRef(0)
   const wasAirborne = useRef(false)
+  const prevSlopeRef = useRef(0)
+  const jumpCooldownRef = useRef(0)
   const avoidLatRef = useRef(0)
   const hitSpinRef = useRef(0)
   const hitLatVelRef = useRef(0)
@@ -306,29 +308,45 @@ export function Vehicle({
       ROAD_HALF - 0.15,
     )
 
-    // jumps
+    // jumps — follow the ramp up, loft once off the crest, then land without re-bouncing
     const roadY = pos.y
     const ahead = curve.getPointAt((t + 0.02) % 1)
     const slope = ahead.y - roadY
+    const prevSlope = prevSlopeRef.current
 
-    if (!wasAirborne.current && slope < -0.35 && roadY > 0.6) {
+    if (jumpCooldownRef.current > 0) {
+      jumpCooldownRef.current = Math.max(0, jumpCooldownRef.current - delta)
+    }
+
+    if (
+      !wasAirborne.current &&
+      jumpCooldownRef.current <= 0 &&
+      roadY > 0.55 &&
+      slope < -0.28 &&
+      prevSlope > -0.08
+    ) {
+      // Crest: road just started dropping after a climb/flat — one loft only
       wasAirborne.current = true
       airYRef.current = roadY
-      airVelRef.current = 4.5 + Math.abs(slope) * 2
+      airVelRef.current = Math.min(2.0, 0.55 + Math.abs(slope) * 1.1)
     }
 
     let y = roadY
     if (wasAirborne.current) {
-      airVelRef.current -= 12 * delta
+      airVelRef.current -= 14 * delta
       airYRef.current += airVelRef.current * delta
       y = Math.max(roadY, airYRef.current)
-      if (airYRef.current <= roadY && airVelRef.current < 0) {
+      if (airYRef.current <= roadY && airVelRef.current <= 0) {
         wasAirborne.current = false
         airYRef.current = 0
         airVelRef.current = 0
+        // Lock out until past this bump so the downslope can't fire again
+        jumpCooldownRef.current = 0.85
         y = roadY
       }
     }
+
+    prevSlopeRef.current = slope
 
     const finalPos = pos.clone().addScaledVector(side, clampedLateral)
     finalPos.y = y + 0.05

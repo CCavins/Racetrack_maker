@@ -21,6 +21,34 @@ const HANDLE_RADIUS = 10
 const MIN_POINTS = 4
 const ROAD_PX = 36
 
+/** White start/finish stripe across the road at the path origin */
+function drawStartLine(
+  ctx: CanvasRenderingContext2D,
+  road: Vec2[],
+) {
+  if (road.length < 2) return
+  const a = road[0]
+  const b = road[1]
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len = Math.hypot(dx, dy) || 1
+  const nx = -dy / len
+  const ny = dx / len
+  const half = ROAD_PX * 0.48
+
+  ctx.save()
+  ctx.strokeStyle = '#ffffff'
+  ctx.lineWidth = 5
+  ctx.lineCap = 'butt'
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'
+  ctx.shadowBlur = 3
+  ctx.beginPath()
+  ctx.moveTo(a.x - nx * half, a.y - ny * half)
+  ctx.lineTo(a.x + nx * half, a.y + ny * half)
+  ctx.stroke()
+  ctx.restore()
+}
+
 function getCanvasPos(
   e: { clientX: number; clientY: number },
   canvas: HTMLCanvasElement,
@@ -281,6 +309,8 @@ export function TrackCanvas() {
       ctx.closePath()
       ctx.stroke()
       ctx.setLineDash([])
+
+      drawStartLine(ctx, road)
 
       ctx.strokeStyle = 'rgba(232, 185, 35, 0.35)'
       ctx.lineWidth = 1.5
