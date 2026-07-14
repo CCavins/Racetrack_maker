@@ -173,12 +173,18 @@ export function TrackCanvas() {
   } | null>(null)
   const [popupCss, setPopupCss] = useState<Vec2 | null>(null)
   const initializedRef = useRef(false)
+  const lastSizeRef = useRef<{ w: number; h: number } | null>(null)
+  const redrawRef = useRef<() => void>(() => {})
+  const pathLenRef = useRef(0)
 
   const {
     design,
     setPath,
     updateControlPoint,
     insertControlPoint,
+    scaleDesignToCanvas,
+    canvasSize,
+    setCanvasSize,
     tool,
     pendingSticker,
     addSticker,
@@ -190,6 +196,11 @@ export function TrackCanvas() {
     setSelectedPointIndex,
     setTool,
   } = useTrackStore()
+
+  pathLenRef.current = design.path.length
+  if (lastSizeRef.current === null && canvasSize) {
+    lastSizeRef.current = canvasSize
+  }
 
   const selectedSticker = design.stickers.find((s) => s.id === selectedStickerId)
 
@@ -349,6 +360,10 @@ export function TrackCanvas() {
     snapGhost,
   ])
 
+  redrawRef.current = redraw
+
+  // Size the canvas once on mount; keep ResizeObserver deps stable so hover/redraw
+  // changes don't tear it down (that was wiping the bitmap and making the track vanish).
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -359,38 +374,51 @@ export function TrackCanvas() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       const rect = parent.getBoundingClientRect()
       if (rect.width < 2 || rect.height < 2) return
-      const nextW = Math.floor(rect.width * dpr)
-      const nextH = Math.floor(rect.height * dpr)
+
+      const nextW = Math.max(1, Math.round(rect.width * dpr))
+      const nextH = Math.max(1, Math.round(rect.height * dpr))
+      const prev = lastSizeRef.current
+
       if (canvas.width !== nextW || canvas.height !== nextH) {
+        if (
+          prev &&
+          prev.w > 0 &&
+          prev.h > 0 &&
+          pathLenRef.current >= 4 &&
+          (prev.w !== nextW || prev.h !== nextH)
+        ) {
+          scaleDesignToCanvas(prev.w, prev.h, nextW, nextH)
+        }
         canvas.width = nextW
         canvas.height = nextH
         canvas.style.width = `${rect.width}px`
         canvas.style.height = `${rect.height}px`
+        lastSizeRef.current = { w: nextW, h: nextH }
+        setCanvasSize(nextW, nextH)
       }
-      if (!initializedRef.current && canvas.width > 0 && canvas.height > 0) {
+
+      if (!initializedRef.current) {
         initializedRef.current = true
-        // Only seed a circle on first visit — never wipe a saved track on remount
-        if (design.path.length < 4) {
-          setPath(createCirclePath(canvas.width, canvas.height))
-        } else {
-          redraw()
-          updatePopupPos()
+        if (pathLenRef.current < 4) {
+          setPath(createCirclePath(nextW, nextH))
+          return
         }
-      } else {
-        redraw()
-        updatePopupPos()
       }
+
+      redrawRef.current()
     }
 
     applySize()
-    const ro = new ResizeObserver(applySize)
+    const ro = new ResizeObserver(() => {
+      applySize()
+    })
     ro.observe(parent)
     window.addEventListener('resize', applySize)
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', applySize)
     }
-  }, [redraw, setPath, updatePopupPos, design.path.length])
+  }, [setPath, scaleDesignToCanvas, setCanvasSize])
 
   useEffect(() => {
     redraw()
@@ -401,10 +429,10 @@ export function TrackCanvas() {
       if (stickerImageCache[type]) continue
       const img = new Image()
       img.src = `/assets/stickers/${type}.png`
-      img.onload = () => redraw()
+      img.onload = () => redrawRef.current()
       stickerImageCache[type] = img
     }
-  }, [redraw])
+  }, [])
 
   const hitTestSticker = (pos: Vec2): string | null => {
     for (let i = design.stickers.length - 1; i >= 0; i--) {

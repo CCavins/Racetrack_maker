@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -17,15 +18,28 @@ import type {
 } from '../types'
 import { createCirclePath, resnapStickersToPath } from '../lib/pathSmooth'
 
+const STORAGE_KEY = 'circuit-sketch-v1'
+
+type PersistedState = {
+  design: TrackDesign
+  step: AppStep
+  stickerSeq: number
+  canvasW?: number
+  canvasH?: number
+}
+
 type TrackStore = {
   step: AppStep
   setStep: (s: AppStep) => void
   design: TrackDesign
+  canvasSize: { w: number; h: number } | null
+  setCanvasSize: (w: number, h: number) => void
   setPath: (path: Vec2[]) => void
   updateControlPoint: (index: number, pos: Vec2) => void
   insertControlPoint: (afterIndex: number, pos: Vec2) => void
   removeControlPoint: (index: number) => void
   resetCircle: (width: number, height: number) => void
+  scaleDesignToCanvas: (fromW: number, fromH: number, toW: number, toH: number) => void
   tool: EditorTool
   setTool: (t: EditorTool) => void
   pendingSticker: StickerType | null
@@ -59,15 +73,89 @@ function withResnapped(path: Vec2[], stickers: Sticker[]): Sticker[] {
   return resnapStickersToPath(path, stickers)
 }
 
+function loadPersisted(): {
+  design: TrackDesign
+  step: AppStep
+  canvasSize: { w: number; h: number } | null
+} | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const data = JSON.parse(raw) as PersistedState
+    if (!data?.design || !Array.isArray(data.design.path)) return null
+    if (typeof data.stickerSeq === 'number' && data.stickerSeq > stickerSeq) {
+      stickerSeq = data.stickerSeq
+    }
+    const step: AppStep =
+      data.step === 'race' || data.step === 'draw' ? data.step : 'draw'
+    const design = { ...emptyDesign(), ...data.design, closed: true }
+    const restoredStep: AppStep =
+      step === 'race' &&
+      design.path.length >= 4 &&
+      design.vehicle !== null
+        ? 'race'
+        : 'draw'
+    const canvasSize =
+      typeof data.canvasW === 'number' &&
+      typeof data.canvasH === 'number' &&
+      data.canvasW > 0 &&
+      data.canvasH > 0
+        ? { w: data.canvasW, h: data.canvasH }
+        : null
+    return {
+      design,
+      step: restoredStep,
+      canvasSize,
+    }
+  } catch {
+    return null
+  }
+}
+
+function savePersisted(
+  design: TrackDesign,
+  step: AppStep,
+  canvasSize: { w: number; h: number } | null,
+) {
+  try {
+    const payload: PersistedState = {
+      design,
+      step: step === 'generating' ? 'draw' : step,
+      stickerSeq,
+      canvasW: canvasSize?.w,
+      canvasH: canvasSize?.h,
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  } catch {
+    // quota / private mode — ignore
+  }
+}
+
 export function TrackProvider({ children }: { children: ReactNode }) {
-  const [step, setStep] = useState<AppStep>('draw')
-  const [design, setDesign] = useState<TrackDesign>(emptyDesign)
+  const persisted = useMemo(() => loadPersisted(), [])
+  const [step, setStep] = useState<AppStep>(persisted?.step ?? 'draw')
+  const [design, setDesign] = useState<TrackDesign>(
+    () => persisted?.design ?? emptyDesign(),
+  )
+  const [canvasSize, setCanvasSizeState] = useState<{ w: number; h: number } | null>(
+    () => persisted?.canvasSize ?? null,
+  )
   const [tool, setTool] = useState<EditorTool>('reshape')
   const [pendingSticker, setPendingSticker] = useState<StickerType | null>(null)
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null)
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(
     null,
   )
+
+  useEffect(() => {
+    savePersisted(design, step, canvasSize)
+  }, [design, step, canvasSize])
+
+  const setCanvasSize = useCallback((w: number, h: number) => {
+    setCanvasSizeState((prev) =>
+      prev && prev.w === w && prev.h === h ? prev : { w, h },
+    )
+  }, [])
 
   const setPath = useCallback((path: Vec2[]) => {
     setDesign((d) => ({
@@ -134,6 +222,31 @@ export function TrackProvider({ children }: { children: ReactNode }) {
     setSelectedPointIndex(null)
   }, [])
 
+  const scaleDesignToCanvas = useCallback(
+    (fromW: number, fromH: number, toW: number, toH: number) => {
+      if (fromW < 2 || fromH < 2 || toW < 2 || toH < 2) return
+      if (fromW === toW && fromH === toH) return
+      const sx = toW / fromW
+      const sy = toH / fromH
+      setDesign((d) => {
+        if (d.path.length < 1) return d
+        const path = d.path.map((p) => ({ x: p.x * sx, y: p.y * sy }))
+        const stickers = d.stickers.map((s) => ({
+          ...s,
+          x: s.x * sx,
+          y: s.y * sy,
+        }))
+        return {
+          ...d,
+          path,
+          stickers: withResnapped(path, stickers),
+          closed: true,
+        }
+      })
+    },
+    [],
+  )
+
   const addSticker = useCallback(
     (s: Omit<Sticker, 'id'>, opts?: { select?: boolean }) => {
       const id = `stk-${++stickerSeq}`
@@ -179,6 +292,7 @@ export function TrackProvider({ children }: { children: ReactNode }) {
     setSelectedPointIndex(null)
     setPendingSticker(null)
     setTool('reshape')
+    setStep('draw')
   }, [])
 
   const canGenerate =
@@ -189,11 +303,14 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       step,
       setStep,
       design,
+      canvasSize,
+      setCanvasSize,
       setPath,
       updateControlPoint,
       insertControlPoint,
       removeControlPoint,
       resetCircle,
+      scaleDesignToCanvas,
       tool,
       setTool,
       pendingSticker,
@@ -212,11 +329,14 @@ export function TrackProvider({ children }: { children: ReactNode }) {
     [
       step,
       design,
+      canvasSize,
+      setCanvasSize,
       setPath,
       updateControlPoint,
       insertControlPoint,
       removeControlPoint,
       resetCircle,
+      scaleDesignToCanvas,
       tool,
       pendingSticker,
       addSticker,
