@@ -147,19 +147,43 @@ function obstacleRadius(type: Sticker['type'], scale: number): number {
   }
 }
 
+/** Light Laplacian smooth on a closed loop (XZ only; keep Y jumps) */
+function smoothClosedRoadPoints(points: THREE.Vector3[], passes = 2): THREE.Vector3[] {
+  let pts = points.map((p) => p.clone())
+  const n = pts.length
+  for (let pass = 0; pass < passes; pass++) {
+    const next: THREE.Vector3[] = []
+    for (let i = 0; i < n; i++) {
+      const a = pts[(i - 1 + n) % n]
+      const b = pts[i]
+      const c = pts[(i + 1) % n]
+      next.push(
+        new THREE.Vector3(
+          b.x * 0.5 + (a.x + c.x) * 0.25,
+          b.y,
+          b.z * 0.5 + (a.z + c.z) * 0.25,
+        ),
+      )
+    }
+    pts = next
+  }
+  return pts
+}
+
 /** Sample a polyline into a CatmullRomCurve3 for the rest of the app */
 function toCatmullFromPolyline(
   poly: ClosedPolylineCurve,
   samples: number,
   elevate: (t: number, p: THREE.Vector3) => THREE.Vector3,
 ): { curve: THREE.CatmullRomCurve3; roadPoints: THREE.Vector3[] } {
-  const roadPoints: THREE.Vector3[] = []
+  const raw: THREE.Vector3[] = []
   for (let i = 0; i < samples; i++) {
     const t = i / samples
     const p = poly.getPoint(t)
-    roadPoints.push(elevate(t, p))
+    raw.push(elevate(t, p))
   }
-  // Dense samples → centripetal CatmullRom stays faithful to the polyline
+  const roadPoints = smoothClosedRoadPoints(raw, 2)
+  // Dense, lightly smoothed samples → stable tangents for the car
   const curve = new THREE.CatmullRomCurve3(roadPoints, true, 'centripetal')
   return { curve, roadPoints }
 }
@@ -187,7 +211,7 @@ export function buildTrack3D(design: TrackDesign): Track3D | null {
     jumps.push({ t, strength: 2.8 * s.scale })
   }
 
-  const SAMPLE = Math.max(128, flatPoints.length * 2)
+  const SAMPLE = Math.max(160, flatPoints.length * 2)
   let minX = Infinity
   let maxX = -Infinity
   let minZ = Infinity

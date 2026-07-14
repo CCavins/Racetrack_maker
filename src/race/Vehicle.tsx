@@ -179,6 +179,10 @@ export function Vehicle({
   const hitSlowRef = useRef(0)
   const hitCooldownRef = useRef(0)
   const shakeRef = useRef(0)
+  const smoothTanRef = useRef(new THREE.Vector3(0, 0, 1))
+  const smoothPosRef = useRef(new THREE.Vector3())
+  const smoothQuatRef = useRef(new THREE.Quaternion())
+  const motionReadyRef = useRef(false)
 
   const baseSpeed = VEHICLE_META[vehicleId].speed
   const carRadius =
@@ -188,7 +192,8 @@ export function Vehicle({
     : null
   const fallback = <FallbackVehicle id={vehicleId} />
 
-  useFrame((state, delta) => {
+  useFrame((state, rawDelta) => {
+    const delta = Math.min(rawDelta, 1 / 28)
     const curve = track.curve
     const len = Math.max(track.length, 1)
 
@@ -262,7 +267,7 @@ export function Vehicle({
     avoidLatRef.current = THREE.MathUtils.damp(
       avoidLatRef.current,
       avoidTarget,
-      4.5,
+      2.6,
       delta,
     )
 
@@ -282,7 +287,27 @@ export function Vehicle({
 
     const t = tRef.current
     const pos = curve.getPointAt(t)
-    const tangent = curve.getTangentAt(t).normalize()
+
+    // Blend current + look-ahead tangents, flatten Y, then damp — kills turn jitter
+    const tanNow = curve.getTangentAt(t).clone()
+    tanNow.y = 0
+    if (tanNow.lengthSq() < 1e-8) tanNow.set(0, 0, 1)
+    else tanNow.normalize()
+
+    const tLook = (t + 0.018) % 1
+    const tanLook = curve.getTangentAt(tLook).clone()
+    tanLook.y = 0
+    if (tanLook.lengthSq() < 1e-8) tanLook.copy(tanNow)
+    else tanLook.normalize()
+
+    const desiredTan = tanNow.clone().lerp(tanLook, 0.55).normalize()
+    const tanBlend = 1 - Math.exp(-6.5 * delta)
+    if (!motionReadyRef.current) {
+      smoothTanRef.current.copy(desiredTan)
+    } else {
+      smoothTanRef.current.lerp(desiredTan, tanBlend).normalize()
+    }
+    const tangent = smoothTanRef.current
     const side = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize()
 
     weaveRef.current *= Math.pow(0.92, delta * 60)
@@ -348,8 +373,32 @@ export function Vehicle({
 
     prevSlopeRef.current = slope
 
-    const finalPos = pos.clone().addScaledVector(side, clampedLateral)
-    finalPos.y = y + 0.05
+    const targetPos = pos.clone().addScaledVector(side, clampedLateral)
+    targetPos.y = y + 0.05
+
+    if (!motionReadyRef.current) {
+      smoothPosRef.current.copy(targetPos)
+    } else {
+      smoothPosRef.current.x = THREE.MathUtils.damp(
+        smoothPosRef.current.x,
+        targetPos.x,
+        16,
+        delta,
+      )
+      smoothPosRef.current.z = THREE.MathUtils.damp(
+        smoothPosRef.current.z,
+        targetPos.z,
+        16,
+        delta,
+      )
+      smoothPosRef.current.y = THREE.MathUtils.damp(
+        smoothPosRef.current.y,
+        targetPos.y,
+        11,
+        delta,
+      )
+    }
+    const finalPos = smoothPosRef.current
 
     // Collision checks in world space
     if (hitCooldownRef.current <= 0) {
@@ -379,9 +428,13 @@ export function Vehicle({
     }
 
     const lookTarget = finalPos.clone().add(tangent)
+    // Keep look target level so the car stays flat on the road (no roll)
+    lookTarget.y = finalPos.y
     const dummy = new THREE.Object3D()
     dummy.position.copy(finalPos)
+    dummy.up.set(0, 1, 0)
     dummy.lookAt(lookTarget)
+
     if (wasAirborne.current) dummy.rotateX(-0.2)
     dummy.rotateY(hitSpinRef.current * 0.035 + oilAngleRef.current)
     if (shakeRef.current > 0) {
@@ -392,14 +445,22 @@ export function Vehicle({
       dummy.rotateZ(Math.sin(oilAngleRef.current) * 0.12)
     }
 
+    if (!motionReadyRef.current) {
+      smoothQuatRef.current.copy(dummy.quaternion)
+      motionReadyRef.current = true
+    } else {
+      const rotBlend = 1 - Math.exp(-8.5 * delta)
+      smoothQuatRef.current.slerp(dummy.quaternion, rotBlend)
+    }
+
     if (groupRef.current) {
       groupRef.current.position.copy(finalPos)
-      groupRef.current.quaternion.copy(dummy.quaternion)
+      groupRef.current.quaternion.copy(smoothQuatRef.current)
     }
 
     stateRef.current = {
       position: finalPos.clone(),
-      quaternion: dummy.quaternion.clone(),
+      quaternion: smoothQuatRef.current.clone(),
       t,
       lap: lapRef.current,
     }
@@ -411,7 +472,7 @@ export function Vehicle({
         .clone()
         .addScaledVector(tangent, -dist)
         .add(new THREE.Vector3(0, height, 0))
-      state.camera.position.lerp(camBehind, 1 - Math.pow(0.05, delta * 60))
+      state.camera.position.lerp(camBehind, 1 - Math.pow(0.08, delta * 60))
       const look = finalPos
         .clone()
         .addScaledVector(tangent, Math.max(3, dist * 0.45))
