@@ -17,6 +17,7 @@ import type {
   VehicleLookMode,
   Vec2,
 } from '../types'
+import { STICKER_TYPES, VEHICLE_IDS } from '../types'
 import { createCirclePath, resnapStickersToPath } from '../lib/pathSmooth'
 
 const STORAGE_KEY = 'circuit-sketch-v1'
@@ -78,6 +79,10 @@ type TrackStore = {
   setVehicleWrap: (wrap: string | null) => void
   toggleReverseDirection: () => void
   exportDesignJson: () => string
+  importDesignJson: (
+    json: string,
+    targetCanvas?: { w: number; h: number },
+  ) => { ok: true } | { ok: false; error: string }
   bestLapMs: number | null
   recordLapTime: (ms: number) => void
   clearAll: (width?: number, height?: number) => void
@@ -105,6 +110,47 @@ function withResnapped(path: Vec2[], stickers: Sticker[]): Sticker[] {
   return resnapStickersToPath(path, stickers)
 }
 
+function isVec2(v: unknown): v is Vec2 {
+  return (
+    !!v &&
+    typeof v === 'object' &&
+    typeof (v as Vec2).x === 'number' &&
+    typeof (v as Vec2).y === 'number' &&
+    Number.isFinite((v as Vec2).x) &&
+    Number.isFinite((v as Vec2).y)
+  )
+}
+
+function isStickerType(t: unknown): t is StickerType {
+  return typeof t === 'string' && (STICKER_TYPES as string[]).includes(t)
+}
+
+function isVehicleId(v: unknown): v is VehicleId {
+  return typeof v === 'string' && (VEHICLE_IDS as string[]).includes(v)
+}
+
+function parseSticker(raw: unknown, index: number): Sticker | null {
+  if (!raw || typeof raw !== 'object') return null
+  const s = raw as Record<string, unknown>
+  if (!isStickerType(s.type) || !isVec2({ x: s.x, y: s.y })) return null
+  const id =
+    typeof s.id === 'string' && s.id.length > 0 ? s.id : `import-${index}`
+  const rotation = typeof s.rotation === 'number' ? s.rotation : 0
+  const scale =
+    typeof s.scale === 'number' && s.scale > 0 ? s.scale : 1
+  const pathT =
+    typeof s.pathT === 'number' && Number.isFinite(s.pathT) ? s.pathT : undefined
+  return {
+    id,
+    type: s.type,
+    x: s.x as number,
+    y: s.y as number,
+    rotation,
+    scale,
+    ...(pathT !== undefined ? { pathT } : {}),
+  }
+}
+
 function normalizeDesign(raw: Partial<TrackDesign>): TrackDesign {
   const look: VehicleLookMode =
     raw.vehicleLook === 'paint' ||
@@ -127,6 +173,141 @@ function normalizeDesign(raw: Partial<TrackDesign>): TrackDesign {
     reverseDirection: Boolean(raw.reverseDirection),
     closed: true,
   }
+}
+
+/** Parse export payload `{ version, design, canvasW?, canvasH? }` or a bare TrackDesign. */
+function parseDesignJson(json: string):
+  | {
+      ok: true
+      design: TrackDesign
+      canvasW: number | null
+      canvasH: number | null
+    }
+  | { ok: false; error: string } {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch {
+    return { ok: false, error: 'Not valid JSON' }
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return { ok: false, error: 'Expected a JSON object' }
+  }
+  const root = parsed as Record<string, unknown>
+  const rawDesign =
+    root.design && typeof root.design === 'object'
+      ? (root.design as Partial<TrackDesign>)
+      : Array.isArray(root.path)
+        ? (root as Partial<TrackDesign>)
+        : null
+  if (!rawDesign) {
+    return { ok: false, error: 'Missing design.path' }
+  }
+  if (!Array.isArray(rawDesign.path) || rawDesign.path.length < MIN_POINTS) {
+    return { ok: false, error: `Track needs at least ${MIN_POINTS} points` }
+  }
+  const path = rawDesign.path.filter(isVec2)
+  if (path.length < MIN_POINTS) {
+    return { ok: false, error: 'Path points must be { x, y } numbers' }
+  }
+  const stickers = Array.isArray(rawDesign.stickers)
+    ? rawDesign.stickers
+        .map(parseSticker)
+        .filter((s): s is Sticker => s !== null)
+    : []
+  const vehicle =
+    rawDesign.vehicle === null || rawDesign.vehicle === undefined
+      ? null
+      : isVehicleId(rawDesign.vehicle)
+        ? rawDesign.vehicle
+        : null
+  const vehicleWrap =
+    typeof rawDesign.vehicleWrap === 'string' &&
+    rawDesign.vehicleWrap.startsWith('data:')
+      ? rawDesign.vehicleWrap
+      : null
+  const vehicleColor =
+    typeof rawDesign.vehicleColor === 'string' ? rawDesign.vehicleColor : null
+
+  const canvasW =
+    typeof root.canvasW === 'number' && root.canvasW > 2 ? root.canvasW : null
+  const canvasH =
+    typeof root.canvasH === 'number' && root.canvasH > 2 ? root.canvasH : null
+
+  const design = normalizeDesign({
+    ...rawDesign,
+    path,
+    stickers: withResnapped(path, stickers),
+    vehicle,
+    vehicleColor,
+    vehicleWrap,
+  })
+  return { ok: true, design, canvasW, canvasH }
+}
+
+function mapDesignCoords(
+  design: TrackDesign,
+  map: (x: number, y: number) => Vec2,
+): TrackDesign {
+  const path = design.path.map((p) => map(p.x, p.y))
+  const stickers = design.stickers.map((s) => {
+    const p = map(s.x, s.y)
+    return { ...s, x: p.x, y: p.y }
+  })
+  return {
+    ...design,
+    path,
+    stickers: withResnapped(path, stickers),
+  }
+}
+
+/** Scale from export canvas size, or fit bbox into the live canvas. */
+function adaptDesignToCanvas(
+  design: TrackDesign,
+  toW: number,
+  toH: number,
+  fromW: number | null,
+  fromH: number | null,
+): TrackDesign {
+  if (toW < 2 || toH < 2) return design
+
+  if (fromW && fromH && fromW > 2 && fromH > 2) {
+    const sx = toW / fromW
+    const sy = toH / fromH
+    if (Math.abs(sx - 1) < 0.001 && Math.abs(sy - 1) < 0.001) return design
+    return mapDesignCoords(design, (x, y) => ({ x: x * sx, y: y * sy }))
+  }
+
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const p of design.path) {
+    minX = Math.min(minX, p.x)
+    minY = Math.min(minY, p.y)
+    maxX = Math.max(maxX, p.x)
+    maxY = Math.max(maxY, p.y)
+  }
+  for (const s of design.stickers) {
+    minX = Math.min(minX, s.x)
+    minY = Math.min(minY, s.y)
+    maxX = Math.max(maxX, s.x)
+    maxY = Math.max(maxY, s.y)
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return design
+
+  const bw = Math.max(maxX - minX, 1)
+  const bh = Math.max(maxY - minY, 1)
+  const pad = 0.1
+  const scale = Math.min((toW * (1 - 2 * pad)) / bw, (toH * (1 - 2 * pad)) / bh)
+  const contentW = bw * scale
+  const contentH = bh * scale
+  const ox = (toW - contentW) / 2 - minX * scale
+  const oy = (toH - contentH) / 2 - minY * scale
+  return mapDesignCoords(design, (x, y) => ({
+    x: x * scale + ox,
+    y: y * scale + oy,
+  }))
 }
 
 function loadPersisted(): {
@@ -407,6 +588,8 @@ export function TrackProvider({ children }: { children: ReactNode }) {
     return JSON.stringify(
       {
         version: 1,
+        canvasW: canvasSize?.w ?? null,
+        canvasH: canvasSize?.h ?? null,
         design: {
           ...design,
           // omit huge wrap from export by default — include if modest
@@ -419,7 +602,44 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       null,
       2,
     )
-  }, [design])
+  }, [design, canvasSize])
+
+  const importDesignJson = useCallback(
+    (json: string, targetCanvas?: { w: number; h: number }) => {
+      const result = parseDesignJson(json)
+      if (!result.ok) return result
+      let next = result.design
+      const toW = targetCanvas?.w ?? canvasSize?.w ?? 0
+      const toH = targetCanvas?.h ?? canvasSize?.h ?? 0
+      if (toW > 2 && toH > 2) {
+        next = adaptDesignToCanvas(
+          next,
+          toW,
+          toH,
+          result.canvasW,
+          result.canvasH,
+        )
+      }
+      // Keep sticker id counter ahead of anything imported
+      for (const s of next.stickers) {
+        const m = /^stk-(\d+)$/.exec(s.id)
+        if (m) {
+          const n = Number(m[1])
+          if (n >= stickerSeq) stickerSeq = n + 1
+        }
+      }
+      saveStoredWrap(next.vehicleWrap)
+      setDesign(next)
+      setBestLapMs(null)
+      setSelectedStickerId(null)
+      setSelectedPointIndex(null)
+      setPendingSticker(null)
+      setTool('reshape')
+      setStep('draw')
+      return { ok: true as const }
+    },
+    [canvasSize],
+  )
 
   const recordLapTime = useCallback((ms: number) => {
     if (ms <= 0) return
@@ -479,6 +699,7 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       setVehicleWrap,
       toggleReverseDirection,
       exportDesignJson,
+      importDesignJson,
       bestLapMs,
       recordLapTime,
       clearAll,
@@ -508,6 +729,7 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       setVehicleWrap,
       toggleReverseDirection,
       exportDesignJson,
+      importDesignJson,
       bestLapMs,
       recordLapTime,
       clearAll,

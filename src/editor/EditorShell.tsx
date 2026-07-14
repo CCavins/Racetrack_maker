@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { useTrackStore } from '../state/trackStore'
 import { TrackCanvas } from './TrackCanvas'
 import { StickerPalette } from './StickerPalette'
@@ -5,6 +6,7 @@ import { VehiclePicker } from './VehiclePicker'
 import './EditorShell.css'
 
 export function EditorShell() {
+  const importInputRef = useRef<HTMLInputElement>(null)
   const {
     tool,
     setTool,
@@ -20,6 +22,7 @@ export function EditorShell() {
     setSelectedPointIndex,
     toggleReverseDirection,
     exportDesignJson,
+    importDesignJson,
   } = useTrackStore()
 
   const generate = () => {
@@ -70,6 +73,35 @@ export function EditorShell() {
     URL.revokeObjectURL(url)
   }
 
+  const importTrack = () => {
+    importInputRef.current?.click()
+  }
+
+  const onImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = typeof reader.result === 'string' ? reader.result : ''
+      const canvas = document.querySelector(
+        '.track-canvas',
+      ) as HTMLCanvasElement | null
+      const target =
+        canvas && canvas.width > 2 && canvas.height > 2
+          ? { w: canvas.width, h: canvas.height }
+          : undefined
+      const result = importDesignJson(text, target)
+      if (!result.ok) {
+        window.alert(`Could not import track: ${result.error}`)
+      }
+    }
+    reader.onerror = () => {
+      window.alert('Could not read that file')
+    }
+    reader.readAsText(file)
+  }
+
   return (
     <div className="editor-shell" onKeyDown={onKeyDown} tabIndex={0}>
       <aside className="editor-rail">
@@ -114,6 +146,18 @@ export function EditorShell() {
           <button type="button" className="ghost-btn" onClick={exportTrack}>
             Export JSON
           </button>
+          <button type="button" className="ghost-btn" onClick={importTrack}>
+            Import JSON
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="import-file-input"
+            onChange={onImportFile}
+            aria-hidden
+            tabIndex={-1}
+          />
         </div>
 
         <StickerPalette />

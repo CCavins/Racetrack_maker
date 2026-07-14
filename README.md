@@ -22,7 +22,7 @@ npm run lint     # Oxlint
 1. **Reshape** the closed course (drag handles, click the edge to add points).
 2. **Place stickers** (jumps, cones, oil, boost, etc.).
 3. **Pick a vehicle**, choose a **paint** color, and optionally **draw a wrap**.
-4. Toggle **CW / CCW** race direction; **Export JSON** to share a design file.
+4. Toggle **CW / CCW** race direction; **Export JSON** / **Import JSON** to share a design file.
 5. Hit **Generate 3D** to enter the live race view (last/best lap times in the HUD).
 6. Use **Edit track** to go back; the design is preserved (also saved in `localStorage`).
 

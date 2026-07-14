@@ -89,6 +89,14 @@
   color: #e8b923;
 }
 
+.import-file-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .generate-block {
   margin-top: auto;
   padding-top: 0.5rem;
