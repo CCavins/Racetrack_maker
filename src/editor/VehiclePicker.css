@@ -1,0 +1,74 @@
+.vehicle-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.vehicle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.vehicle-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.vehicle-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.vehicle-card.active {
+  border-color: #e8b923;
+  background: rgba(232, 185, 35, 0.12);
+}
+
+.vehicle-thumb {
+  width: 48px;
+  height: 36px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.vehicle-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.vehicle-fallback {
+  font-family: 'Bebas Neue', Impact, sans-serif;
+  font-size: 1.4rem;
+}
+
+.vehicle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.vehicle-name {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #f0ece4;
+}
+
+.vehicle-speed {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.65rem;
+  color: #8a8680;
+}

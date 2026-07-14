@@ -1,0 +1,117 @@
+.sticker-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sticker-help {
+  margin: 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: #8a8680;
+}
+
+.rail-heading {
+  margin: 0;
+  font-family: 'Bebas Neue', Impact, sans-serif;
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+  color: #e8e4dc;
+  font-weight: 400;
+}
+
+.sticker-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.sticker-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.4rem 0.25rem;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: #c8c4bc;
+  cursor: pointer;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 0.68rem;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.sticker-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sticker-btn.active {
+  border-color: #e8b923;
+  background: rgba(232, 185, 35, 0.12);
+}
+
+.sticker-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.sticker-swatch img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.sticker-label {
+  line-height: 1.1;
+}
+
+.sticker-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sticker-edit-title {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #e8b923;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+}
+
+.slider-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+  color: #a8a49c;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.slider-label input {
+  width: 100%;
+  accent-color: #e8b923;
+}
+
+.danger-btn {
+  margin-top: 0.25rem;
+  padding: 0.4rem;
+  border: 1px solid rgba(220, 80, 60, 0.5);
+  background: rgba(220, 80, 60, 0.15);
+  color: #ffb4a8;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.75rem;
+}
+
+.danger-btn:hover {
+  background: rgba(220, 80, 60, 0.3);
+}

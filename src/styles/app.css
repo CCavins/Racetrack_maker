@@ -1,0 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  background: #141618;
+  color: #f0ece4;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  appearance: none;
+}
+
+.app-root {
+  height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+.generating-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(14, 16, 18, 0.72);
+  backdrop-filter: blur(10px);
+  animation: fade-in 0.25s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.generating-card {
+  text-align: center;
+  padding: 2rem 2.5rem;
+  max-width: 360px;
+}
+
+.generating-title {
+  margin: 0;
+  font-family: 'Bebas Neue', Impact, sans-serif;
+  font-size: 2.4rem;
+  letter-spacing: 0.08em;
+  color: #f4f0e8;
+}
+
+.generating-sub {
+  margin: 0.4rem 0 1.4rem;
+  font-size: 0.85rem;
+  color: #9a968e;
+}
+
+.generating-bar {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.generating-bar span {
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: #e8b923;
+  animation: slide 0.9s ease-in-out infinite;
+}
+
+@keyframes slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
