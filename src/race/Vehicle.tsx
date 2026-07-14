@@ -3,14 +3,15 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import type { Track3D } from '../lib/buildTrack3D'
-import { VEHICLE_META, type VehicleId } from '../types'
+import { VEHICLE_META, type VehicleId, type VehicleLookMode } from '../types'
+import { recolorBodyMaterials } from '../lib/vehicleStyle'
 import { Component, type ReactNode } from 'react'
 
 const VEHICLE_URLS: Record<VehicleId, string> = {
-  sports: '/assets/vehicles/sports.glb',
-  motorcycle: '/assets/vehicles/motorcycle.glb',
-  semi: '/assets/vehicles/semi.glb',
-  minivan: '/assets/vehicles/minivan.glb',
+  sports: `${import.meta.env.BASE_URL}assets/vehicles/sports.glb`,
+  motorcycle: `${import.meta.env.BASE_URL}assets/vehicles/motorcycle.glb`,
+  semi: `${import.meta.env.BASE_URL}assets/vehicles/semi.glb`,
+  minivan: `${import.meta.env.BASE_URL}assets/vehicles/minivan.glb`,
 }
 
 const AVAILABLE_VEHICLE_GLBS = new Set<VehicleId>([
@@ -20,8 +21,28 @@ const AVAILABLE_VEHICLE_GLBS = new Set<VehicleId>([
   'minivan',
 ])
 
-function FallbackVehicle({ id }: { id: VehicleId }) {
-  const color = VEHICLE_META[id].color
+function FallbackVehicle({
+  id,
+  color,
+  wrapMap,
+  look,
+}: {
+  id: VehicleId
+  color: string
+  wrapMap: THREE.Texture | null
+  look: VehicleLookMode
+}) {
+  const stockColor = VEHICLE_META[id].color
+  const bodyColor = look === 'paint' ? color : stockColor
+  const useWrap = look === 'wrap' && wrapMap
+  const bodyMat = (
+    <meshStandardMaterial
+      color={useWrap ? '#ffffff' : bodyColor}
+      map={useWrap ? wrapMap : undefined}
+      metalness={0.4}
+      roughness={0.4}
+    />
+  )
   // Bodies are built with length along Z; wrap with π yaw so nose faces
   // local -Z (Three.js lookAt forward).
   const body = (() => {
@@ -30,7 +51,7 @@ function FallbackVehicle({ id }: { id: VehicleId }) {
         <group>
           <mesh castShadow position={[0, 0.45, 0]}>
             <boxGeometry args={[0.35, 0.35, 1.1]} />
-            <meshStandardMaterial color={color} metalness={0.4} roughness={0.4} />
+            {bodyMat}
           </mesh>
           <mesh castShadow position={[0, 0.25, 0.35]} rotation={[0, 0, Math.PI / 2]}>
             <torusGeometry args={[0.22, 0.06, 8, 16]} />
@@ -48,7 +69,7 @@ function FallbackVehicle({ id }: { id: VehicleId }) {
         <group>
           <mesh castShadow position={[0, 0.7, -0.9]}>
             <boxGeometry args={[1.2, 1.1, 1.4]} />
-            <meshStandardMaterial color={color} metalness={0.3} roughness={0.5} />
+            {bodyMat}
           </mesh>
           <mesh castShadow position={[0, 0.85, 1.2]}>
             <boxGeometry args={[1.3, 1.4, 2.8]} />
@@ -61,7 +82,7 @@ function FallbackVehicle({ id }: { id: VehicleId }) {
       return (
         <mesh castShadow position={[0, 0.55, 0]}>
           <boxGeometry args={[1.1, 0.85, 2.0]} />
-          <meshStandardMaterial color={color} metalness={0.25} roughness={0.55} />
+          {bodyMat}
         </mesh>
       )
     }
@@ -69,7 +90,7 @@ function FallbackVehicle({ id }: { id: VehicleId }) {
       <group>
         <mesh castShadow position={[0, 0.35, 0]}>
           <boxGeometry args={[1.05, 0.35, 2.1]} />
-          <meshStandardMaterial color={color} metalness={0.5} roughness={0.35} />
+          {bodyMat}
         </mesh>
         <mesh castShadow position={[0, 0.55, 0.15]}>
           <boxGeometry args={[0.9, 0.3, 1.0]} />
@@ -82,7 +103,19 @@ function FallbackVehicle({ id }: { id: VehicleId }) {
   return <group rotation={[0, Math.PI, 0]}>{body}</group>
 }
 
-function LoadedVehicle({ url, id }: { url: string; id: VehicleId }) {
+function LoadedVehicle({
+  url,
+  id,
+  color,
+  wrapMap,
+  look,
+}: {
+  url: string
+  id: VehicleId
+  color: string
+  wrapMap: THREE.Texture | null
+  look: VehicleLookMode
+}) {
   const { scene } = useGLTF(url)
   const cloned = useMemo(() => {
     const root = new THREE.Group()
@@ -116,8 +149,15 @@ function LoadedVehicle({ url, id }: { url: string; id: VehicleId }) {
     root.add(c)
     const box3 = new THREE.Box3().setFromObject(root)
     root.position.y -= box3.min.y
+
+    if (look === 'paint') {
+      recolorBodyMaterials(root, color, null)
+    } else if (look === 'wrap' && wrapMap) {
+      recolorBodyMaterials(root, color, wrapMap)
+    }
+    // stock: leave GLB materials as-is
     return root
-  }, [scene, id])
+  }, [scene, id, color, wrapMap, look])
   return <primitive object={cloned} />
 }
 
@@ -145,8 +185,13 @@ export type VehicleState = {
 type Props = {
   track: Track3D
   vehicleId: VehicleId
+  vehicleLook: VehicleLookMode
+  vehicleColor: string
+  vehicleWrap: string | null
+  reverseDirection: boolean
   chaseCam: boolean
   chaseDistance: number
+  chaseOrbit: number
   showBeacon: boolean
   stateRef: MutableRefObject<VehicleState>
   onLap?: (lap: number) => void
@@ -155,8 +200,13 @@ type Props = {
 export function Vehicle({
   track,
   vehicleId,
+  vehicleLook,
+  vehicleColor,
+  vehicleWrap,
+  reverseDirection,
   chaseCam,
   chaseDistance,
+  chaseOrbit,
   showBeacon,
   stateRef,
   onLap,
@@ -184,13 +234,30 @@ export function Vehicle({
   const smoothQuatRef = useRef(new THREE.Quaternion())
   const motionReadyRef = useRef(false)
 
+  const wrapMap = useMemo(() => {
+    if (vehicleLook !== 'wrap' || !vehicleWrap) return null
+    const loader = new THREE.TextureLoader()
+    const tex = loader.load(vehicleWrap)
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.flipY = true
+    tex.needsUpdate = true
+    return tex
+  }, [vehicleWrap, vehicleLook])
+
   const baseSpeed = VEHICLE_META[vehicleId].speed
   const carRadius =
     vehicleId === 'semi' ? 1.15 : vehicleId === 'motorcycle' ? 0.45 : 0.75
   const url = AVAILABLE_VEHICLE_GLBS.has(vehicleId)
     ? VEHICLE_URLS[vehicleId]
     : null
-  const fallback = <FallbackVehicle id={vehicleId} />
+  const fallback = (
+    <FallbackVehicle
+      id={vehicleId}
+      color={vehicleColor}
+      wrapMap={wrapMap}
+      look={vehicleLook}
+    />
+  )
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 1 / 28)
@@ -276,11 +343,14 @@ export function Vehicle({
       (1 + boostRef.current * 0.85) *
       (hitSlowRef.current > 0 ? 0.78 : 1) *
       (onOilSpin ? 0.42 : 1)
-    const dt = (baseSpeed * speedMul * delta * 60) / len
+    const dt =
+      ((reverseDirection ? -1 : 1) * baseSpeed * speedMul * delta * 60) / len
     const prevT = tRef.current
-    tRef.current = (tRef.current + dt) % 1
+    tRef.current = (tRef.current + dt + 1) % 1
 
-    if (tRef.current < prevT) {
+    const crossedForward = !reverseDirection && tRef.current < prevT
+    const crossedReverse = reverseDirection && tRef.current > prevT + 0.5
+    if (crossedForward || crossedReverse) {
       lapRef.current += 1
       onLap?.(lapRef.current)
     }
@@ -294,11 +364,15 @@ export function Vehicle({
     if (tanNow.lengthSq() < 1e-8) tanNow.set(0, 0, 1)
     else tanNow.normalize()
 
-    const tLook = (t + 0.018) % 1
+    const tLook = (t + (reverseDirection ? -0.018 : 0.018) + 1) % 1
     const tanLook = curve.getTangentAt(tLook).clone()
     tanLook.y = 0
     if (tanLook.lengthSq() < 1e-8) tanLook.copy(tanNow)
     else tanLook.normalize()
+    if (reverseDirection) {
+      tanNow.negate()
+      tanLook.negate()
+    }
 
     const desiredTan = tanNow.clone().lerp(tanLook, 0.55).normalize()
     const tanBlend = 1 - Math.exp(-6.5 * delta)
@@ -335,7 +409,9 @@ export function Vehicle({
 
     // jumps — follow the ramp up, loft once off the crest, then land without re-bouncing
     const roadY = pos.y
-    const ahead = curve.getPointAt((t + 0.02) % 1)
+    const ahead = curve.getPointAt(
+      (t + (reverseDirection ? -0.02 : 0.02) + 1) % 1,
+    )
     const slope = ahead.y - roadY
     const prevSlope = prevSlopeRef.current
 
@@ -468,15 +544,21 @@ export function Vehicle({
     if (chaseCam) {
       const dist = chaseDistance
       const height = Math.max(2.2, dist * 0.48)
+      // Orbit around the car: rotate the chase offset in the ground plane
+      const back = tangent.clone().multiplyScalar(-1)
+      back.applyAxisAngle(new THREE.Vector3(0, 1, 0), chaseOrbit)
+      back.normalize()
       const camBehind = finalPos
         .clone()
-        .addScaledVector(tangent, -dist)
+        .addScaledVector(back, dist)
         .add(new THREE.Vector3(0, height, 0))
       state.camera.position.lerp(camBehind, 1 - Math.pow(0.08, delta * 60))
-      const look = finalPos
-        .clone()
-        .addScaledVector(tangent, Math.max(3, dist * 0.45))
-      look.y += 0.8
+      // Look at the car itself. Only nudge look-ahead when nearly behind —
+      // side/front orbits must stay centered on the vehicle, not far ahead.
+      const rearFactor = Math.max(0, Math.cos(chaseOrbit)) ** 2
+      const look = finalPos.clone()
+      look.y += 0.85
+      look.addScaledVector(tangent, rearFactor * Math.min(2.2, dist * 0.18))
       state.camera.lookAt(look)
     }
   })
@@ -486,7 +568,13 @@ export function Vehicle({
       {url ? (
         <ErrBoundary fallback={fallback}>
           <Suspense fallback={fallback}>
-            <LoadedVehicle url={url} id={vehicleId} />
+            <LoadedVehicle
+              url={url}
+              id={vehicleId}
+              color={vehicleColor}
+              wrapMap={wrapMap}
+              look={vehicleLook}
+            />
           </Suspense>
         </ErrBoundary>
       ) : (

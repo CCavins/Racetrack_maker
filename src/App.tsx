@@ -21,15 +21,14 @@ function AppSteps() {
   const { step } = useTrackStore()
 
   if (step === 'race') return <RaceView />
-  if (step === 'generating') {
-    return (
-      <>
-        <EditorShell />
-        <GeneratingOverlay />
-      </>
-    )
-  }
-  return <EditorShell />
+
+  // Keep EditorShell mounted across draw ↔ generating so wrap canvas isn't wiped
+  return (
+    <>
+      <EditorShell />
+      {step === 'generating' && <GeneratingOverlay />}
+    </>
+  )
 }
 
 export default function App() {

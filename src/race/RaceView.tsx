@@ -13,11 +13,13 @@ import './RaceView.css'
 function SceneContent({
   chaseCam,
   chaseDistance,
+  chaseOrbit,
   onLap,
   stateRef,
 }: {
   chaseCam: boolean
   chaseDistance: number
+  chaseOrbit: number
   onLap: (n: number) => void
   stateRef: React.MutableRefObject<VehicleState>
 }) {
@@ -29,24 +31,36 @@ function SceneContent({
   const pad = 18
   const { minX, maxX, minZ, maxZ } = track.bounds
   const groundSize = Math.max(maxX - minX, maxZ - minZ) + pad * 2
+  const look = design.vehicleLook ?? 'stock'
+  const vehicleColor =
+    look === 'paint'
+      ? (design.vehicleColor ?? VEHICLE_META[design.vehicle].color)
+      : VEHICLE_META[design.vehicle].color
+  const vehicleWrap = look === 'wrap' ? design.vehicleWrap : null
 
   return (
     <>
       <color attach="background" args={['#87a0b0']} />
-      <fog attach="fog" args={['#9eb0bc', 40, 120]} />
-      <ambientLight intensity={0.55} />
-      <hemisphereLight args={['#c8d8e8', '#4a5a40', 0.55]} />
+      <fog attach="fog" args={['#9eb0bc', 50, 130]} />
+      {/* Soft fill so backsides / wraps stay readable */}
+      <ambientLight intensity={0.92} />
+      <hemisphereLight args={['#f0f4f8', '#6a7a5c', 1.05]} />
+      {/* Bright key sun */}
       <directionalLight
         castShadow
-        position={[30, 40, 20]}
-        intensity={1.35}
+        position={[35, 48, 22]}
+        intensity={1.75}
         shadow-mapSize={[2048, 2048]}
         shadow-camera-far={120}
         shadow-camera-left={-40}
         shadow-camera-right={40}
         shadow-camera-top={40}
         shadow-camera-bottom={-40}
+        shadow-bias={-0.0002}
       />
+      {/* Opposite fill so the shadowed flank isn't black */}
+      <directionalLight position={[-28, 22, -18]} intensity={0.55} color="#c8daf0" />
+      <directionalLight position={[8, 14, -30]} intensity={0.35} color="#ffe8d0" />
       <Sky sunPosition={[100, 40, 40]} turbidity={4} rayleigh={1.2} />
 
       <mesh
@@ -63,8 +77,13 @@ function SceneContent({
       <Vehicle
         track={track}
         vehicleId={design.vehicle}
+        vehicleLook={look}
+        vehicleColor={vehicleColor}
+        vehicleWrap={vehicleWrap}
+        reverseDirection={design.reverseDirection}
         chaseCam={chaseCam}
         chaseDistance={chaseDistance}
+        chaseOrbit={chaseOrbit}
         showBeacon={!chaseCam}
         stateRef={stateRef}
         onLap={onLap}
@@ -72,9 +91,9 @@ function SceneContent({
 
       <ContactShadows
         position={[0, 0.01, 0]}
-        opacity={0.35}
+        opacity={0.28}
         scale={groundSize}
-        blur={2.5}
+        blur={2.8}
         far={12}
       />
 
@@ -194,10 +213,16 @@ function CarEdgeHint({ active }: { active: boolean }) {
 }
 
 export function RaceView() {
-  const { design, setStep } = useTrackStore()
+  const { design, setStep, bestLapMs, recordLapTime } = useTrackStore()
   const [chaseCam, setChaseCam] = useState(true)
   const [chaseDistance, setChaseDistance] = useState(8)
+  const [chaseOrbit, setChaseOrbit] = useState(0)
   const [lap, setLap] = useState(0)
+  const [lastLapMs, setLastLapMs] = useState<number | null>(null)
+  const lapStartRef = useRef(performance.now())
+  const dragRef = useRef<{ x: number; orbit: number } | null>(null)
+  const chaseOrbitRef = useRef(0)
+  chaseOrbitRef.current = chaseOrbit
   const wrapRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<VehicleState>({
     position: new THREE.Vector3(),
@@ -209,6 +234,21 @@ export function RaceView() {
     ? VEHICLE_META[design.vehicle].label
     : 'Vehicle'
 
+  const onLap = (n: number) => {
+    const now = performance.now()
+    const ms = now - lapStartRef.current
+    lapStartRef.current = now
+    if (n > 0) {
+      setLastLapMs(ms)
+      recordLapTime(ms)
+    }
+    setLap(n)
+  }
+
+  useEffect(() => {
+    lapStartRef.current = performance.now()
+  }, [])
+
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
@@ -219,9 +259,44 @@ export function RaceView() {
         Math.min(22, Math.max(3.5, d + e.deltaY * 0.012)),
       )
     }
+    const onPointerDown = (e: PointerEvent) => {
+      if (!chaseCam) return
+      // Ignore HUD buttons
+      if ((e.target as HTMLElement).closest('.race-hud')) return
+      dragRef.current = { x: e.clientX, orbit: chaseOrbitRef.current }
+      el.setPointerCapture(e.pointerId)
+    }
+    const onPointerMove = (e: PointerEvent) => {
+      if (!chaseCam || !dragRef.current) return
+      const dx = e.clientX - dragRef.current.x
+      setChaseOrbit(dragRef.current.orbit - dx * 0.008)
+    }
+    const onPointerUp = (e: PointerEvent) => {
+      dragRef.current = null
+      try {
+        el.releasePointerCapture(e.pointerId)
+      } catch {
+        /* already released */
+      }
+    }
     el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
+    el.addEventListener('pointerdown', onPointerDown)
+    el.addEventListener('pointermove', onPointerMove)
+    el.addEventListener('pointerup', onPointerUp)
+    el.addEventListener('pointercancel', onPointerUp)
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('pointerdown', onPointerDown)
+      el.removeEventListener('pointermove', onPointerMove)
+      el.removeEventListener('pointerup', onPointerUp)
+      el.removeEventListener('pointercancel', onPointerUp)
+    }
   }, [chaseCam])
+
+  const fmt = (ms: number) => {
+    const s = ms / 1000
+    return `${s.toFixed(2)}s`
+  }
 
   return (
     <div className="race-view" ref={wrapRef}>
@@ -233,7 +308,8 @@ export function RaceView() {
         <SceneContent
           chaseCam={chaseCam}
           chaseDistance={chaseDistance}
-          onLap={setLap}
+          chaseOrbit={chaseOrbit}
+          onLap={onLap}
           stateRef={stateRef}
         />
       </Canvas>
@@ -245,14 +321,25 @@ export function RaceView() {
           <p className="hud-brand">Circuit Sketch</p>
           <p className="hud-meta">
             {vehicleLabel} · Lap {lap + 1}
-            {chaseCam ? ` · Zoom ${chaseDistance.toFixed(0)}m` : ' · Orbit · yellow beacon = car'}
+            {design.reverseDirection ? ' · CCW' : ' · CW'}
+            {chaseCam
+              ? ` · Zoom ${chaseDistance.toFixed(0)}m · drag to peek`
+              : ' · Orbit · yellow beacon = car'}
+          </p>
+          <p className="hud-times">
+            {lastLapMs !== null ? `Last ${fmt(lastLapMs)}` : 'Last —'}
+            {' · '}
+            {bestLapMs !== null ? `Best ${fmt(bestLapMs)}` : 'Best —'}
           </p>
         </div>
         <div className="hud-right">
           <button
             type="button"
             className="hud-btn"
-            onClick={() => setChaseCam((c) => !c)}
+            onClick={() => {
+              setChaseCam((c) => !c)
+              setChaseOrbit(0)
+            }}
           >
             {chaseCam ? 'Orbit cam' : 'Chase cam'}
           </button>

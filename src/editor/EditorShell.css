@@ -64,6 +64,7 @@
 
 .rail-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
 }
 
@@ -81,6 +82,11 @@
 .ghost-btn:hover {
   color: #e8e4dc;
   border-color: rgba(255, 255, 255, 0.25);
+}
+
+.ghost-btn.active {
+  border-color: rgba(232, 185, 35, 0.55);
+  color: #e8b923;
 }
 
 .generate-block {

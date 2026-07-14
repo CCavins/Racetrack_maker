@@ -18,6 +18,8 @@ export function EditorShell() {
     selectedPointIndex,
     removeControlPoint,
     setSelectedPointIndex,
+    toggleReverseDirection,
+    exportDesignJson,
   } = useTrackStore()
 
   const generate = () => {
@@ -57,6 +59,17 @@ export function EditorShell() {
     clearAll(canvas?.width || 800, canvas?.height || 600)
   }
 
+  const exportTrack = () => {
+    const json = exportDesignJson()
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'circuit-sketch-track.json'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="editor-shell" onKeyDown={onKeyDown} tabIndex={0}>
       <aside className="editor-rail">
@@ -89,6 +102,17 @@ export function EditorShell() {
           </button>
           <button type="button" className="ghost-btn" onClick={resetEverything}>
             Reset all
+          </button>
+          <button
+            type="button"
+            className={`ghost-btn ${design.reverseDirection ? 'active' : ''}`}
+            onClick={toggleReverseDirection}
+            title="Race direction around the track"
+          >
+            {design.reverseDirection ? 'Direction: CCW' : 'Direction: CW'}
+          </button>
+          <button type="button" className="ghost-btn" onClick={exportTrack}>
+            Export JSON
           </button>
         </div>
 

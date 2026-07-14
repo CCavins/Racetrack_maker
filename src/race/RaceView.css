@@ -4,6 +4,12 @@
   height: 100%;
   overflow: hidden;
   animation: race-in 0.55s ease-out;
+  touch-action: none;
+  cursor: grab;
+}
+
+.race-view:active {
+  cursor: grabbing;
 }
 
 @keyframes race-in {
@@ -61,6 +67,13 @@
   font-family: 'DM Sans', sans-serif;
   font-size: 0.8rem;
   color: rgba(244, 240, 232, 0.8);
+}
+
+.hud-times {
+  margin: 0.15rem 0 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.75rem;
+  color: rgba(232, 185, 35, 0.95);
 }
 
 .hud-btn {

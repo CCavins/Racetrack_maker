@@ -6,12 +6,12 @@ import { ROAD_WIDTH, type PropPlacement, type DecalPlacement } from '../lib/buil
 import type { StickerType } from '../types'
 
 const PROP_URLS: Partial<Record<StickerType, string>> = {
-  cone: '/assets/props/cone.glb',
-  barrier: '/assets/props/barrier.glb',
-  rock: '/assets/props/rock.glb',
-  tree: '/assets/props/tree.glb',
-  tires: '/assets/props/tires.glb',
-  billboard: '/assets/props/billboard.glb',
+  cone: `${import.meta.env.BASE_URL}assets/props/cone.glb`,
+  barrier: `${import.meta.env.BASE_URL}assets/props/barrier.glb`,
+  rock: `${import.meta.env.BASE_URL}assets/props/rock.glb`,
+  tree: `${import.meta.env.BASE_URL}assets/props/tree.glb`,
+  tires: `${import.meta.env.BASE_URL}assets/props/tires.glb`,
+  billboard: `${import.meta.env.BASE_URL}assets/props/billboard.glb`,
 }
 
 /** Only attempt GLB load for assets we know shipped with the build */

@@ -40,7 +40,7 @@ export function StickerPalette() {
                 style={{ background: meta.color }}
               >
                 <img
-                  src={`/assets/stickers/${type}.png`}
+                  src={`${import.meta.env.BASE_URL}assets/stickers/${type}.png`}
                   alt=""
                   onError={(e) => {
                     ;(e.target as HTMLImageElement).style.display = 'none'

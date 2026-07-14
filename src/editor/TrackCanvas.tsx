@@ -458,7 +458,7 @@ export function TrackCanvas() {
     for (const type of Object.keys(STICKER_META) as StickerType[]) {
       if (stickerImageCache[type]) continue
       const img = new Image()
-      img.src = `/assets/stickers/${type}.png`
+      img.src = `${import.meta.env.BASE_URL}assets/stickers/${type}.png`
       img.onload = () => redrawRef.current()
       stickerImageCache[type] = img
     }

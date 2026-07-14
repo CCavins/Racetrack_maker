@@ -14,11 +14,31 @@ import type {
   StickerType,
   TrackDesign,
   VehicleId,
+  VehicleLookMode,
   Vec2,
 } from '../types'
 import { createCirclePath, resnapStickersToPath } from '../lib/pathSmooth'
 
 const STORAGE_KEY = 'circuit-sketch-v1'
+const WRAP_STORAGE_KEY = 'circuit-sketch-wrap-v1'
+
+function loadStoredWrap(): string | null {
+  try {
+    const w = localStorage.getItem(WRAP_STORAGE_KEY)
+    return w && w.startsWith('data:') ? w : null
+  } catch {
+    return null
+  }
+}
+
+function saveStoredWrap(wrap: string | null) {
+  try {
+    if (!wrap) localStorage.removeItem(WRAP_STORAGE_KEY)
+    else localStorage.setItem(WRAP_STORAGE_KEY, wrap)
+  } catch {
+    /* quota — keep in memory; race still works this session */
+  }
+}
 
 type PersistedState = {
   design: TrackDesign
@@ -26,6 +46,7 @@ type PersistedState = {
   stickerSeq: number
   canvasW?: number
   canvasH?: number
+  bestLapMs?: number | null
 }
 
 type TrackStore = {
@@ -52,6 +73,13 @@ type TrackStore = {
   selectedPointIndex: number | null
   setSelectedPointIndex: (i: number | null) => void
   setVehicle: (v: VehicleId) => void
+  setVehicleLook: (look: import('../types').VehicleLookMode) => void
+  setVehicleColor: (color: string | null) => void
+  setVehicleWrap: (wrap: string | null) => void
+  toggleReverseDirection: () => void
+  exportDesignJson: () => string
+  bestLapMs: number | null
+  recordLapTime: (ms: number) => void
   clearAll: (width?: number, height?: number) => void
   canGenerate: boolean
 }
@@ -64,6 +92,10 @@ const emptyDesign = (): TrackDesign => ({
   path: [],
   stickers: [],
   vehicle: null,
+  vehicleLook: 'stock',
+  vehicleColor: null,
+  vehicleWrap: null,
+  reverseDirection: false,
   closed: true,
 })
 
@@ -73,10 +105,35 @@ function withResnapped(path: Vec2[], stickers: Sticker[]): Sticker[] {
   return resnapStickersToPath(path, stickers)
 }
 
+function normalizeDesign(raw: Partial<TrackDesign>): TrackDesign {
+  const look: VehicleLookMode =
+    raw.vehicleLook === 'paint' ||
+    raw.vehicleLook === 'wrap' ||
+    raw.vehicleLook === 'stock'
+      ? raw.vehicleLook
+      : raw.vehicleWrap
+        ? 'wrap'
+        : raw.vehicleColor
+          ? 'paint'
+          : 'stock'
+  return {
+    ...emptyDesign(),
+    ...raw,
+    stickers: Array.isArray(raw.stickers) ? raw.stickers : [],
+    path: Array.isArray(raw.path) ? raw.path : [],
+    vehicleLook: look,
+    vehicleColor: raw.vehicleColor ?? null,
+    vehicleWrap: raw.vehicleWrap ?? null,
+    reverseDirection: Boolean(raw.reverseDirection),
+    closed: true,
+  }
+}
+
 function loadPersisted(): {
   design: TrackDesign
   step: AppStep
   canvasSize: { w: number; h: number } | null
+  bestLapMs: number | null
 } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -88,7 +145,16 @@ function loadPersisted(): {
     }
     const step: AppStep =
       data.step === 'race' || data.step === 'draw' ? data.step : 'draw'
-    const design = { ...emptyDesign(), ...data.design, closed: true }
+    const design = normalizeDesign(data.design)
+    // Wrap lives in a separate key so quota failures don't wipe it
+    if (!design.vehicleWrap) {
+      design.vehicleWrap = loadStoredWrap()
+      if (design.vehicleWrap && design.vehicleLook === 'stock') {
+        design.vehicleLook = 'wrap'
+      }
+    } else {
+      saveStoredWrap(design.vehicleWrap)
+    }
     const restoredStep: AppStep =
       step === 'race' &&
       design.path.length >= 4 &&
@@ -106,6 +172,10 @@ function loadPersisted(): {
       design,
       step: restoredStep,
       canvasSize,
+      bestLapMs:
+        typeof data.bestLapMs === 'number' && data.bestLapMs > 0
+          ? data.bestLapMs
+          : null,
     }
   } catch {
     return null
@@ -116,18 +186,38 @@ function savePersisted(
   design: TrackDesign,
   step: AppStep,
   canvasSize: { w: number; h: number } | null,
+  bestLapMs: number | null,
 ) {
+  // Always keep wrap in its own key so the main blob stays small
+  saveStoredWrap(design.vehicleWrap)
   try {
     const payload: PersistedState = {
-      design,
+      design: { ...design, vehicleWrap: null },
       step: step === 'generating' ? 'draw' : step,
       stickerSeq,
       canvasW: canvasSize?.w,
       canvasH: canvasSize?.h,
+      bestLapMs,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   } catch {
-    // quota / private mode — ignore
+    try {
+      const payload: PersistedState = {
+        design: {
+          ...design,
+          vehicleWrap: null,
+          stickers: design.stickers.slice(0, 40),
+        },
+        step: step === 'generating' ? 'draw' : step,
+        stickerSeq,
+        canvasW: canvasSize?.w,
+        canvasH: canvasSize?.h,
+        bestLapMs,
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -140,6 +230,9 @@ export function TrackProvider({ children }: { children: ReactNode }) {
   const [canvasSize, setCanvasSizeState] = useState<{ w: number; h: number } | null>(
     () => persisted?.canvasSize ?? null,
   )
+  const [bestLapMs, setBestLapMs] = useState<number | null>(
+    () => persisted?.bestLapMs ?? null,
+  )
   const [tool, setTool] = useState<EditorTool>('reshape')
   const [pendingSticker, setPendingSticker] = useState<StickerType | null>(null)
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null)
@@ -148,8 +241,8 @@ export function TrackProvider({ children }: { children: ReactNode }) {
   )
 
   useEffect(() => {
-    savePersisted(design, step, canvasSize)
-  }, [design, step, canvasSize])
+    savePersisted(design, step, canvasSize, bestLapMs)
+  }, [design, step, canvasSize, bestLapMs])
 
   const setCanvasSize = useCallback((w: number, h: number) => {
     setCanvasSizeState((prev) =>
@@ -281,13 +374,71 @@ export function TrackProvider({ children }: { children: ReactNode }) {
     setDesign((d) => ({ ...d, vehicle: v }))
   }, [])
 
+  const setVehicleLook = useCallback((look: VehicleLookMode) => {
+    setDesign((d) => ({ ...d, vehicleLook: look }))
+  }, [])
+
+  const setVehicleColor = useCallback((color: string | null) => {
+    setDesign((d) => ({
+      ...d,
+      vehicleColor: color,
+      vehicleLook: 'paint',
+    }))
+  }, [])
+
+  const setVehicleWrap = useCallback((wrap: string | null) => {
+    saveStoredWrap(wrap)
+    setDesign((d) => ({
+      ...d,
+      vehicleWrap: wrap,
+      vehicleLook: wrap
+        ? 'wrap'
+        : d.vehicleLook === 'wrap'
+          ? 'stock'
+          : d.vehicleLook,
+    }))
+  }, [])
+
+  const toggleReverseDirection = useCallback(() => {
+    setDesign((d) => ({ ...d, reverseDirection: !d.reverseDirection }))
+  }, [])
+
+  const exportDesignJson = useCallback(() => {
+    return JSON.stringify(
+      {
+        version: 1,
+        design: {
+          ...design,
+          // omit huge wrap from export by default — include if modest
+          vehicleWrap:
+            design.vehicleWrap && design.vehicleWrap.length < 200_000
+              ? design.vehicleWrap
+              : null,
+        },
+      },
+      null,
+      2,
+    )
+  }, [design])
+
+  const recordLapTime = useCallback((ms: number) => {
+    if (ms <= 0) return
+    setBestLapMs((prev) => (prev === null || ms < prev ? ms : prev))
+  }, [])
+
   const clearAll = useCallback((width = 800, height = 600) => {
+    saveStoredWrap(null)
     setDesign({
       path: createCirclePath(width, height),
       stickers: [],
       vehicle: null,
+      vehicleLook: 'stock',
+      vehicleColor: null,
+      vehicleWrap: null,
+      reverseDirection: false,
       closed: true,
     })
+    setBestLapMs(null)
     setSelectedStickerId(null)
     setSelectedPointIndex(null)
     setPendingSticker(null)
@@ -323,6 +474,13 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       selectedPointIndex,
       setSelectedPointIndex,
       setVehicle,
+      setVehicleLook,
+      setVehicleColor,
+      setVehicleWrap,
+      toggleReverseDirection,
+      exportDesignJson,
+      bestLapMs,
+      recordLapTime,
       clearAll,
       canGenerate,
     }),
@@ -345,6 +503,13 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       selectedStickerId,
       selectedPointIndex,
       setVehicle,
+      setVehicleLook,
+      setVehicleColor,
+      setVehicleWrap,
+      toggleReverseDirection,
+      exportDesignJson,
+      bestLapMs,
+      recordLapTime,
       clearAll,
       canGenerate,
     ],

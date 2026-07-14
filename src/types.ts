@@ -25,12 +25,34 @@ export type Sticker = {
   pathT?: number
 }
 
+export type VehicleLookMode = 'stock' | 'paint' | 'wrap'
+
 export type TrackDesign = {
   path: Vec2[]
   stickers: Sticker[]
   vehicle: VehicleId | null
+  /** Which look is active in the race */
+  vehicleLook: VehicleLookMode
+  /** Body paint hex (used when vehicleLook === 'paint') */
+  vehicleColor: string | null
+  /** PNG/JPEG data URL (used when vehicleLook === 'wrap') */
+  vehicleWrap: string | null
+  /** When true, race runs counter-clockwise (decreasing t) */
+  reverseDirection: boolean
   closed: boolean
 }
+
+/** Preset swatches for the vehicle paint picker */
+export const VEHICLE_PAINT_SWATCHES = [
+  '#e63946',
+  '#1a9fff',
+  '#2a9d8f',
+  '#e9c46a',
+  '#f4f0e8',
+  '#1a1a1a',
+  '#7b2cbf',
+  '#f07316',
+] as const
 
 export type AppStep = 'draw' | 'generating' | 'race'
 
