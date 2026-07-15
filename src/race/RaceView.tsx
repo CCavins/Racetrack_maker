@@ -27,7 +27,11 @@ function startLateralFor(
   roadWidth: number,
 ): number {
   if (count <= 1) return 0
-  const span = (roadWidth / 2) * 0.78
+  const edgePad = 0.45
+  const usable = Math.max(roadWidth - edgePad * 2, 1.2)
+  // Prefer ~1.5m between lane centers; shrink only if the road is too narrow
+  const gap = Math.min(1.55, usable / (count - 1))
+  const span = gap * (count - 1)
   return -span / 2 + (span * index) / (count - 1)
 }
 

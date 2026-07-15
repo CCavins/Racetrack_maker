@@ -150,7 +150,15 @@ function LoadedVehicle({
       }
     })
 
-    // Normalize size
+    // Normalize size — cyberbike ships with a tilted Sketchfab display pose
+    // on every node; clear that before measuring so scale/align are upright.
+    if (id === 'cyberbike') {
+      c.traverse((obj) => {
+        if (obj !== c) obj.quaternion.identity()
+      })
+      c.updateMatrixWorld(true)
+    }
+
     const box = new THREE.Box3().setFromObject(c)
     const size = new THREE.Vector3()
     box.getSize(size)
@@ -170,22 +178,29 @@ function LoadedVehicle({
     const size2 = new THREE.Vector3()
     box2.getSize(size2)
 
-    // Higgsfield / Kenney: length often along X. lookAt aims local -Z down the path.
-    if (size2.x > size2.z) {
-      c.rotation.y = Math.PI / 2
+    if (id === 'cyberbike') {
+      // Mesh is stored length-along-X and lying on its side. Stand up, then
+      // point the nose along local −Z (lookAt forward).
+      c.rotation.set(0, 0, 0)
+      c.rotateZ(-Math.PI / 2)
+      c.rotateY(Math.PI / 2)
+    } else {
+      // Higgsfield / Kenney: length often along X. lookAt aims local -Z down the path.
+      if (size2.x > size2.z) {
+        c.rotation.y = Math.PI / 2
+      }
+      // Some Sketchfab exports face the opposite way after axis align
+      const facingFlip: Partial<Record<VehicleId, number>> = {
+        muscle: Math.PI,
+        cruiser: Math.PI,
+        canyon: Math.PI,
+        thunderbolt: Math.PI,
+        cheetah: Math.PI,
+        lct: Math.PI,
+        cb750: Math.PI,
+      }
+      c.rotation.y += facingFlip[id] ?? 0
     }
-    // Some Sketchfab exports face the opposite way after axis align
-    const facingFlip: Partial<Record<VehicleId, number>> = {
-      muscle: Math.PI,
-      cruiser: Math.PI,
-      canyon: Math.PI,
-      thunderbolt: Math.PI,
-      cheetah: Math.PI,
-      lct: Math.PI,
-      cb750: Math.PI,
-      cyberbike: Math.PI,
-    }
-    c.rotation.y += facingFlip[id] ?? 0
 
     root.add(c)
     // Sketchfab exports (e.g. cruiser) can be far from origin — recenter XZ
