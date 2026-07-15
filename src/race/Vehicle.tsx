@@ -565,39 +565,45 @@ export function Vehicle({
     }
     const actualBase = actualBaseRef.current
 
-    const lookNear = 0.0025
-    const lookFar = 0.035
+    // Turn sensing in meters along the ribbon (not lap-fraction — long tracks
+    // were barely registering bends, so full throw felt free everywhere).
     const tanFlat = curve.getTangentAt(tNow).clone()
     tanFlat.y = 0
     if (tanFlat.lengthSq() > 1e-8) tanFlat.normalize()
     else tanFlat.set(0, 0, 1)
-    const tNear = (tNow + (reverseDirection ? -lookNear : lookNear) + 1) % 1
-    const tFar = (tNow + (reverseDirection ? -lookFar : lookFar) + 1) % 1
-    const tanNear = curve.getTangentAt(tNear).clone()
-    const tanFar = curve.getTangentAt(tFar).clone()
-    tanNear.y = 0
-    tanFar.y = 0
-    if (tanNear.lengthSq() > 1e-8) tanNear.normalize()
-    if (tanFar.lengthSq() > 1e-8) tanFar.normalize()
-    if (reverseDirection) {
-      tanFlat.negate()
-      tanNear.negate()
-      tanFar.negate()
+    if (reverseDirection) tanFlat.negate()
+
+    const tangentAtDist = (distM: number) => {
+      const dt = distM / len
+      const t =
+        (tNow + (reverseDirection ? -dt : dt) + 1) % 1
+      const tan = curve.getTangentAt(t).clone()
+      tan.y = 0
+      if (tan.lengthSq() > 1e-8) tan.normalize()
+      else tan.copy(tanFlat)
+      if (reverseDirection) tan.negate()
+      return tan
     }
-    const turnNear = Math.acos(
-      THREE.MathUtils.clamp(tanFlat.dot(tanNear), -1, 1),
-    )
-    const turnFar = Math.acos(
-      THREE.MathUtils.clamp(tanFlat.dot(tanFar), -1, 1),
-    )
+
+    const turnAngle = (distM: number) => {
+      const tan = tangentAtDist(distM)
+      return Math.acos(THREE.MathUtils.clamp(tanFlat.dot(tan), -1, 1))
+    }
+
+    // ~8° starts to matter · ~28° is a proper bend · hairpins peg it
+    const turnNear = turnAngle(3.2)
+    const turnMid = turnAngle(7.5)
+    const turnFar = turnAngle(14)
     const turnFactor = Math.max(
-      THREE.MathUtils.smoothstep(0.004, 0.07, turnNear),
-      THREE.MathUtils.smoothstep(0.012, 0.2, turnFar),
+      THREE.MathUtils.smoothstep(0.12, 0.45, turnNear),
+      THREE.MathUtils.smoothstep(0.1, 0.5, turnMid),
+      THREE.MathUtils.smoothstep(0.08, 0.55, turnFar),
     )
+
+    const tanFar = tangentAtDist(10)
     const turnSigned = tanFlat.x * tanFar.z - tanFlat.z * tanFar.x
-    // Mild bends still wash you wide when carrying too much speed
     const outward =
-      turnFactor < 0.02 ? 0 : Math.sign(turnSigned) || 0
+      turnFactor < 0.08 ? 0 : Math.sign(turnSigned) || 0
 
     let obstacleThreat = 0
     if (canMove) {
@@ -614,8 +620,9 @@ export function Vehicle({
       }
     }
 
-    // Straight ≈ 0.42 · medium ≈ 0.09 · hairpin ≈ 0.04
-    const bendSafe = 0.035 + 0.385 * Math.pow(1 - turnFactor, 3.0)
+    // Full throw (~0.42) is above even open bends — you must lift for curves.
+    // Dead straight ≈ 0.34 · medium ≈ 0.12 · hairpin ≈ 0.04
+    const bendSafe = 0.04 + 0.30 * Math.pow(1 - turnFactor, 2.2)
     const maxSafe =
       bendSafe * THREE.MathUtils.lerp(1, 0.35, obstacleThreat)
 
@@ -631,33 +638,30 @@ export function Vehicle({
     const onBoost = boostRef.current > 0.05
 
     const excess = Math.max(0, throttleDesired - maxSafe)
-    // Soft carry: some overspeed stays on the ribbon so you feel the wash-out
-    const carried = excess > 0 ? excess / (1 + excess * 5.5) : 0
-    const capped =
-      Math.min(throttleDesired, maxSafe) + carried + boostExtra
+    // Hard ceiling in bends — no soft carry that lets full throw feel free
+    const capped = Math.min(throttleDesired, maxSafe) + boostExtra
     const underControl =
       canMove &&
       excess < 0.002 &&
       oilSpinRef.current <= 0 &&
-      deslotRef.current < 0.15
+      deslotRef.current < 0.12
     const overspeeding = canMove && excess > 0.002 && oilSpinRef.current <= 0
 
-    // Deslot meter — builds even near centerline; forces the lift
-    // Boost pads do not fill this (they shove you along the ribbon)
+    // Deslot fills fast when you refuse to lift — spin / wash in under a second
     if (canMove && excess > 0 && !onBoost) {
       deslotRef.current +=
-        excess * (0.65 + turnFactor * 1.6) * delta * 60 * 0.55
+        excess * (1.15 + turnFactor * 2.4) * delta * 60 * 0.7
     } else if (canMove) {
-      deslotRef.current = Math.max(0, deslotRef.current - delta * 1.1)
+      deslotRef.current = Math.max(0, deslotRef.current - delta * 1.35)
     } else {
       deslotRef.current = 0
     }
     deslotRef.current = Math.min(deslotRef.current, 1.35)
 
     gripRef.current =
-      excess > 0.004 || deslotRef.current > 0.35
+      excess > 0.004 || deslotRef.current > 0.28
         ? 'red'
-        : throttleDesired > maxSafe * 0.82 || deslotRef.current > 0.12
+        : throttleDesired > maxSafe * 0.78 || deslotRef.current > 0.1
           ? 'amber'
           : 'green'
 
@@ -817,10 +821,10 @@ export function Vehicle({
         7,
         delta,
       )
-    } else if (overspeeding || deslotRef.current > 0.2) {
+    } else if (overspeeding || deslotRef.current > 0.15) {
       const dump =
-        excess * (3.4 + 7 * excess) * (0.55 + turnFactor) +
-        deslotRef.current * 2.1
+        excess * (4.2 + 9 * excess) * (0.7 + turnFactor * 1.4) +
+        deslotRef.current * 2.8
       cornerDriftRef.current += outward * dump * delta * 60
     } else if (canMove && oilSpinRef.current <= 0) {
       cornerDriftRef.current = THREE.MathUtils.damp(
@@ -831,15 +835,15 @@ export function Vehicle({
       )
     }
 
-    // Spin from deslot meter even near centerline — force the lift
+    // Spin from deslot meter — holding full throw in a bend forces the lift
     if (
       canMove &&
       oilSpinRef.current <= 0 &&
       spinCooldownRef.current <= 0 &&
-      (deslotRef.current >= 0.85 ||
-        (deslotRef.current >= 0.55 &&
+      (deslotRef.current >= 0.72 ||
+        (deslotRef.current >= 0.42 &&
           Math.abs(avoidLatRef.current + cornerDriftRef.current) >
-            asphaltHalf * 0.55))
+            asphaltHalf * 0.45))
     ) {
       oilSpinRef.current = 1.55
       spinCooldownRef.current = 2.4

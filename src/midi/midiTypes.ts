@@ -16,7 +16,7 @@ export const DEFAULT_MIDI_BINDINGS: MidiBinding[] = [
 ]
 
 /** Default throw — survives mild bends, not hairpins */
-export const DEFAULT_SPEED01 = 0.28
+export const DEFAULT_SPEED01 = 0.22
 
 /** After a spin, must lift below this to regain power */
 export const POWER_GATE_LIFT = 0.2
@@ -30,14 +30,13 @@ export type MidiPersisted = {
 
 /**
  * Map knob 0–1 → race base speed.
- * Wide range so straights reward full throw and corners demand backing off
- * (slot-car style).
+ * Max throw sits above open-bend allowance so corners demand a lift.
  */
 export function speed01ToBase(speed01: number): number {
   const t = THREE_clamp01(speed01)
   const eased = t * t * (3 - 2 * t)
-  // crawl ≈ 0.02 · mid-throw ≈ 0.14 · max ≈ 0.42
-  return 0.02 + eased * (0.42 - 0.02)
+  // crawl ≈ 0.02 · mid-throw ≈ 0.16 · max ≈ 0.48 (above straight maxSafe ~0.34)
+  return 0.02 + eased * (0.48 - 0.02)
 }
 
 function THREE_clamp01(v: number): number {
