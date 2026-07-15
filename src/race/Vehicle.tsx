@@ -321,6 +321,10 @@ export function Vehicle({
   const motionReadyRef = useRef(false)
   const lateralOutRef = useRef(startLateral)
 
+  const stockSpeed = VEHICLE_META[vehicleId].speed
+  /** Advertised speed ±3 (picker units), rolled each lap */
+  const lapSpeedRef = useRef(rollLapBaseSpeed(stockSpeed))
+
   const wrapMap = useMemo(() => {
     if (vehicleLook !== 'wrap' || !vehicleWrap) return null
     const loader = new THREE.TextureLoader()
@@ -331,7 +335,6 @@ export function Vehicle({
     return tex
   }, [vehicleWrap, vehicleLook])
 
-  const baseSpeed = VEHICLE_META[vehicleId].speed
   const carRadius =
     vehicleId === 'truck' || vehicleId === 'ambulance'
       ? 1.1
@@ -611,6 +614,7 @@ export function Vehicle({
     )
 
     const onOilSpin = oilSpinRef.current > 0
+    const baseSpeed = lapSpeedRef.current
     const speedMul =
       (1 + boostRef.current * 0.85) *
       (hitSlowRef.current > 0 ? 0.78 : 1) *
@@ -625,6 +629,7 @@ export function Vehicle({
     const crossedReverse = reverseDirection && tRef.current > prevT + 0.5
     if (crossedForward || crossedReverse) {
       lapRef.current += 1
+      lapSpeedRef.current = rollLapBaseSpeed(stockSpeed)
       onLap?.(lapRef.current, vehicleId)
     }
 
@@ -927,6 +932,13 @@ export function Vehicle({
 }
 
 const ROAD_HALF = 1.7
+
+/** Picker shows speed as meta.speed×100; each lap rolls that by ±3. */
+function rollLapBaseSpeed(stock: number): number {
+  const advertised = Math.round(stock * 100)
+  const delta = Math.floor(Math.random() * 7) - 3 // -3 … +3 inclusive
+  return Math.max(0.04, (advertised + delta) / 100)
+}
 
 function CarBeacon({ color }: { color: string }) {
   return (
