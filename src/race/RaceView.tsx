@@ -10,8 +10,8 @@ import { PropInstances } from './PropInstances'
 import { Vehicle, type PeerSnapshot, type VehicleState } from './Vehicle'
 import './RaceView.css'
 
-const START_LATERAL = [-1.05, -0.35, 0.35, 1.05]
-const START_T = [0, 0.012, 0.024, 0.036]
+const START_LATERAL = [-0.12, 0.08, -0.06, 0.1]
+const START_T = [0, 0.014, 0.028, 0.042]
 
 function emptyState(id: VehicleId): VehicleState {
   return {

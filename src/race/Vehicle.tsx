@@ -295,6 +295,8 @@ export function Vehicle({
   const prevSlopeRef = useRef(0)
   const jumpCooldownRef = useRef(0)
   const avoidLatRef = useRef(startLateral)
+  /** Sticky pass side while overtaking (-1 / 0 / 1) */
+  const passSideRef = useRef(0)
   const peerSlowRef = useRef(0)
   const hitSpinRef = useRef(0)
   const hitLatVelRef = useRef(0)
@@ -478,9 +480,9 @@ export function Vehicle({
       oilAngleRef.current = THREE.MathUtils.damp(a, 0, 6, delta)
     }
 
-    // Avoidance: steer away from upcoming obstacles + peer racers
-    let avoidTarget = startLateral
-    const lookWindow = 0.08 // ~8% of lap ahead
+    // Prefer centerline; only ease aside for obstacles / cars ahead, then return
+    let avoidTarget = 0
+    const lookWindow = 0.09
     for (const obs of track.obstacles) {
       let dt = obs.t - tNow
       if (dt < -0.5) dt += 1
@@ -488,7 +490,6 @@ export function Vehicle({
       if (reverseDirection) dt = -dt
       if (dt < -0.01 || dt > lookWindow) continue
 
-      // Prefer opposite side of obstacle; if on centerline pick a stable side
       const sidePref =
         Math.abs(obs.lateral) < 0.15
           ? obs.position.x * 0.37 + obs.position.z * 0.71 >= 0
@@ -498,63 +499,89 @@ export function Vehicle({
 
       const urgency = 1 - dt / lookWindow
       const clearance = Math.min(
-        ROAD_HALF - 0.35,
-        obs.radius + carRadius + 0.55,
+        ROAD_HALF - 0.4,
+        obs.radius + carRadius + 0.5,
       )
-      avoidTarget += sidePref * clearance * urgency * 0.85
+      avoidTarget += sidePref * clearance * urgency
     }
 
-    // Smooth peer separation — ease aside, lightly lift off the throttle
+    // Peer overtaking: swing out around the car ahead, then settle back to center
     let peerSlow = 0
+    let passing = false
+    let strongestPass = 0
     const peers = peersRef?.current
     if (peers) {
       const myLat = lateralOutRef.current
+      const passLook = 0.085
       for (let i = 0; i < peers.length; i++) {
         if (i === racerIndex) continue
         const peer = peers[i]
         if (!peer?.active) continue
 
-        // Progress delta in travel direction (ahead = positive)
-        let dProg =
-          peer.lap - lapRef.current + (peer.t - tNow)
+        let dProg = peer.lap - lapRef.current + (peer.t - tNow)
         if (reverseDirection) dProg = -dProg
-        // Wrap short gaps across the start/finish
         if (dProg > 0.5) dProg -= 1
         if (dProg < -0.5) dProg += 1
 
         const latGap = peer.lateral - myLat
         const absLat = Math.abs(latGap)
-        const needSep = carRadius + peer.radius + 0.55
+        const needSep = carRadius + peer.radius + 0.65
 
-        // Peer ahead in our lane → ease off and drift aside
-        if (dProg > 0.002 && dProg < 0.07) {
-          const along = 1 - dProg / 0.07
-          if (absLat < needSep) {
-            const side =
-              absLat < 0.08
-                ? racerIndex % 2 === 0
-                  ? 1
-                  : -1
-                : -Math.sign(latGap || 1)
-            const push = (needSep - absLat) * along * 1.15
-            avoidTarget += side * push
-            peerSlow = Math.max(peerSlow, along * 0.28)
+        // Car ahead close enough that centerline is blocked → pass
+        if (dProg > 0.004 && dProg < passLook) {
+          const along = 1 - dProg / passLook
+          const blocking = absLat < needSep * 0.95
+          if (blocking || Math.abs(peer.lateral) < 0.55) {
+            passing = true
+            let side = passSideRef.current
+            if (side === 0) {
+              // Go to the open side of the car ahead; fall back to stable index side
+              if (Math.abs(peer.lateral) > 0.18) {
+                side = -Math.sign(peer.lateral)
+              } else if (Math.abs(myLat) > 0.12) {
+                side = Math.sign(myLat)
+              } else {
+                side = racerIndex % 2 === 0 ? 1 : -1
+              }
+              passSideRef.current = side
+            }
+            const passLane = side * Math.min(ROAD_HALF - 0.35, needSep * 0.9)
+            const desire = passLane * (0.35 + along * 0.65)
+            if (Math.abs(desire) > Math.abs(strongestPass)) {
+              strongestPass = desire
+            }
+            // Only lift off if still boxed in on the same line
+            if (absLat < needSep * 0.45) {
+              peerSlow = Math.max(peerSlow, along * 0.18)
+            }
           }
         }
 
-        // Peer beside / slightly behind overlapping lane → gentle spread
-        if (Math.abs(dProg) < 0.035 && absLat < needSep) {
+        // Side-by-side overlap — nudge apart without abandoning center forever
+        if (Math.abs(dProg) < 0.028 && absLat < needSep * 0.85) {
+          passing = true
           const side =
-            absLat < 0.06
-              ? racerIndex % 2 === 0
-                ? 1
-                : -1
+            absLat < 0.08
+              ? passSideRef.current || (racerIndex % 2 === 0 ? 1 : -1)
               : -Math.sign(latGap || 1)
+          passSideRef.current = side
           const overlap = (needSep - absLat) / needSep
-          avoidTarget += side * overlap * 0.7
+          const desire = side * Math.min(ROAD_HALF - 0.4, needSep * 0.75) * overlap
+          if (Math.abs(desire) > Math.abs(strongestPass)) {
+            strongestPass = desire
+          }
         }
       }
     }
+    if (!passing) passSideRef.current = 0
+    if (Math.abs(strongestPass) > 0.01) {
+      // Prefer the pass lane while still respecting obstacle dodge
+      avoidTarget =
+        Math.abs(strongestPass) >= Math.abs(avoidTarget)
+          ? strongestPass
+          : avoidTarget + strongestPass * 0.35
+    }
+
     peerSlowRef.current = THREE.MathUtils.damp(
       peerSlowRef.current,
       peerSlow,
@@ -563,10 +590,12 @@ export function Vehicle({
     )
 
     avoidTarget = THREE.MathUtils.clamp(avoidTarget, -ROAD_HALF + 0.25, ROAD_HALF - 0.25)
+    // Snappier when dodging; softer when returning to center
+    const avoidRate = Math.abs(avoidTarget) > 0.2 ? 3.4 : 2.4
     avoidLatRef.current = THREE.MathUtils.damp(
       avoidLatRef.current,
       avoidTarget,
-      2.2,
+      avoidRate,
       delta,
     )
 
