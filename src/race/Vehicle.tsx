@@ -696,8 +696,9 @@ export function Vehicle({
     // Pitch onto the road / jump — smooth & seamless with the ramp
     dummy.rotateX(-smoothPitchRef.current)
     // Motorcycle wheelie: nose up (front tire elevates), rear stays down
+    // Local +X rotates the opposite of road-climb pitch, so negate.
     if (wheelie > 0.001) {
-      dummy.rotateX(wheelie)
+      dummy.rotateX(-wheelie)
     }
 
     dummy.rotateY(
