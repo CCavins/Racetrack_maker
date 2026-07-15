@@ -4,10 +4,12 @@ import { OrbitControls, Sky, ContactShadows } from '@react-three/drei'
 import * as THREE from 'three'
 import { buildTrack3D } from '../lib/buildTrack3D'
 import { useTrackStore } from '../state/trackStore'
+import { useMidiControl } from '../midi/midiControlStore'
 import { VEHICLE_META, getRaceVehicles, type VehicleId } from '../types'
 import { TrackMesh } from './TrackMesh'
 import { PropInstances } from './PropInstances'
 import { Vehicle, type PeerSnapshot, type VehicleState } from './Vehicle'
+import { MidiSettingsPanel } from './MidiSettingsPanel'
 import './RaceView.css'
 
 const START_LATERAL = [-0.12, 0.08, -0.06, 0.1]
@@ -55,6 +57,7 @@ function SceneContent({
   onLap,
   stateRefs,
   peersRef,
+  speed01Refs,
   racers,
   running,
   onReady,
@@ -67,6 +70,7 @@ function SceneContent({
   onLap: (n: number, vehicleId: VehicleId) => void
   stateRefs: React.MutableRefObject<VehicleState>[]
   peersRef: React.MutableRefObject<PeerSnapshot[]>
+  speed01Refs: React.MutableRefObject<number>[]
   racers: VehicleId[]
   running: boolean
   onReady: () => void
@@ -145,6 +149,7 @@ function SceneContent({
             peersRef={peersRef}
             startT={START_T[i] ?? i * 0.012}
             startLateral={START_LATERAL[i] ?? 0}
+            speed01Ref={speed01Refs[i]}
             onLap={onLap}
           />
         )
@@ -283,12 +288,14 @@ type BoardRow = {
 export function RaceView() {
   const { design, setStep, bestLapMs, recordLapTime, setLoadStatus } =
     useTrackStore()
+  const { speed01Refs } = useMidiControl()
   const racers = useMemo(() => getRaceVehicles(design), [design])
   const [chaseCam, setChaseCam] = useState(true)
   const [chaseDistance, setChaseDistance] = useState(8)
   const [chaseOrbit, setChaseOrbit] = useState(0)
   const [chaseIndex, setChaseIndex] = useState(0)
   const [showBeacons, setShowBeacons] = useState(true)
+  const [midiOpen, setMidiOpen] = useState(false)
   const [board, setBoard] = useState<BoardRow[]>([])
   const [lastLapMs, setLastLapMs] = useState<number | null>(null)
   const [sceneReady, setSceneReady] = useState(false)
@@ -465,6 +472,7 @@ export function RaceView() {
             onLap={onLap}
             stateRefs={stateRefs}
             peersRef={peersRef}
+            speed01Refs={speed01Refs}
             racers={racers}
             running={sceneReady}
             onReady={markReady}
@@ -569,6 +577,14 @@ export function RaceView() {
         <div className="hud-right">
           <button
             type="button"
+            className={`hud-btn ${midiOpen ? 'on' : ''}`}
+            onClick={() => setMidiOpen((v) => !v)}
+            title="MIDI knobs and race speeds"
+          >
+            MIDI / Speeds
+          </button>
+          <button
+            type="button"
             className={`hud-btn ${showBeacons ? 'on' : ''}`}
             onClick={() => setShowBeacons((v) => !v)}
             title="Toggle racer markers"
@@ -594,6 +610,12 @@ export function RaceView() {
           </button>
         </div>
       </div>
+
+      <MidiSettingsPanel
+        open={midiOpen}
+        onClose={() => setMidiOpen(false)}
+        racers={racers}
+      />
     </div>
   )
 }

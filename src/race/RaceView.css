@@ -243,3 +243,135 @@
   transition: opacity 0.15s ease;
 }
 
+/* —— MIDI / Speeds panel —— */
+.midi-panel-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: auto;
+  background: rgba(12, 14, 16, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 4.5rem 1.25rem 1.25rem;
+}
+
+.midi-panel {
+  width: min(380px, 100%);
+  max-height: calc(100% - 1rem);
+  overflow: auto;
+  background: rgba(22, 24, 26, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(12px);
+  padding: 1rem 1.1rem 1.15rem;
+  color: #f0ece4;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.midi-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.midi-panel-title {
+  margin: 0;
+  font-family: 'Bebas Neue', Impact, sans-serif;
+  font-size: 1.45rem;
+  letter-spacing: 0.05em;
+  font-weight: 400;
+}
+
+.midi-panel-status {
+  margin: 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.72rem;
+  color: rgba(244, 240, 232, 0.75);
+}
+
+.midi-panel-hint {
+  margin: 0.45rem 0 0.85rem;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: rgba(244, 240, 232, 0.55);
+}
+
+.midi-slot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.midi-slot {
+  border-left: 3px solid #e8b923;
+  padding: 0.55rem 0.65rem 0.6rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.midi-slot.learning {
+  background: rgba(232, 185, 35, 0.12);
+}
+
+.midi-slot-top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+
+.midi-slot-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  flex-shrink: 0;
+}
+
+.midi-slot-name {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+
+.midi-slot-binding {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.68rem;
+  color: rgba(244, 240, 232, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
+.midi-slot-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.midi-slider-label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.midi-pct {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.7rem;
+  width: 2.4rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(244, 240, 232, 0.85);
+}
+
+.midi-slider-label input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: #e8b923;
+}
+

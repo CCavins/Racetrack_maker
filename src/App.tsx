@@ -1,4 +1,5 @@
 import { TrackProvider, useTrackStore } from './state/trackStore'
+import { MidiControlProvider } from './midi/midiControlStore'
 import { EditorShell } from './editor/EditorShell'
 import { RaceView } from './race/RaceView'
 import './styles/app.css'
@@ -37,9 +38,11 @@ function AppSteps() {
 export default function App() {
   return (
     <TrackProvider>
-      <div className="app-root">
-        <AppSteps />
-      </div>
+      <MidiControlProvider>
+        <div className="app-root">
+          <AppSteps />
+        </div>
+      </MidiControlProvider>
     </TrackProvider>
   )
 }
