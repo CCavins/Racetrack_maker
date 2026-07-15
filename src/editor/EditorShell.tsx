@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { useTrackStore } from '../state/trackStore'
+import { getRaceVehicles } from '../types'
 import { TrackCanvas } from './TrackCanvas'
 import { StickerPalette } from './StickerPalette'
 import { VehiclePicker } from './VehiclePicker'
@@ -187,8 +188,8 @@ export function EditorShell() {
           >
             Generate 3D
           </button>
-          {design.closed && !design.vehicle && (
-            <p className="gen-hint">Pick a vehicle</p>
+          {design.closed && getRaceVehicles(design).length === 0 && (
+            <p className="gen-hint">Pick at least one vehicle (up to 4)</p>
           )}
         </div>
       </aside>

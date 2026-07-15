@@ -1,7 +1,9 @@
 import {
+  MAX_RACERS,
   VEHICLE_IDS,
   VEHICLE_META,
   VEHICLE_PAINT_SWATCHES,
+  getRaceVehicles,
   type VehicleId,
   type VehicleLookMode,
 } from '../types'
@@ -16,7 +18,9 @@ const LOOK_MODES: { id: VehicleLookMode; label: string; hint: string }[] = [
 ]
 
 export function VehiclePicker() {
-  const { design, setVehicle, setVehicleColor, setVehicleLook } = useTrackStore()
+  const { design, setVehicle, toggleVehicle, setVehicleColor, setVehicleLook } =
+    useTrackStore()
+  const lineup = getRaceVehicles(design)
   const look = design.vehicleLook ?? 'stock'
   const activeColor =
     design.vehicleColor ??
@@ -33,23 +37,39 @@ export function VehiclePicker() {
 
   return (
     <div className="vehicle-picker">
-      <h3 className="rail-heading">Vehicle</h3>
+      <h3 className="rail-heading">Vehicles</h3>
+      <p className="vehicle-lineup-hint">
+        Pick up to {MAX_RACERS} · {lineup.length}/{MAX_RACERS} selected
+        {lineup.length > 0 ? ' · tap again to remove' : ''}
+      </p>
       <div className="vehicle-list">
         {VEHICLE_IDS.map((id: VehicleId) => {
           const meta = VEHICLE_META[id]
+          const slot = lineup.indexOf(id)
+          const selected = slot >= 0
+          const focused = design.vehicle === id
           const paint =
-            design.vehicle === id && look === 'paint'
-              ? activeColor
-              : meta.color
+            focused && look === 'paint' ? activeColor : meta.color
+          const full = lineup.length >= MAX_RACERS && !selected
           return (
             <button
               key={id}
               type="button"
-              className={`vehicle-card ${design.vehicle === id ? 'active' : ''}`}
-              onClick={() => setVehicle(id)}
+              className={`vehicle-card ${selected ? 'active' : ''} ${focused ? 'focused' : ''} ${full ? 'dimmed' : ''}`}
+              onClick={() => {
+                if (selected && focused) toggleVehicle(id)
+                else if (selected) setVehicle(id)
+                else toggleVehicle(id)
+              }}
+              disabled={full}
               style={
-                design.vehicle === id
-                  ? { borderColor: paint, boxShadow: `inset 3px 0 0 ${paint}` }
+                selected
+                  ? {
+                      borderColor: paint,
+                      boxShadow: focused
+                        ? `inset 3px 0 0 ${paint}`
+                        : `inset 2px 0 0 ${paint}88`,
+                    }
                   : undefined
               }
             >
@@ -57,6 +77,11 @@ export function VehiclePicker() {
                 className="vehicle-thumb"
                 style={{ background: `${paint}33` }}
               >
+                {selected && (
+                  <span className="vehicle-slot" aria-hidden>
+                    {slot + 1}
+                  </span>
+                )}
                 <img
                   src={`${import.meta.env.BASE_URL}assets/vehicles/${id}-preview.png`}
                   alt=""
@@ -67,11 +92,7 @@ export function VehiclePicker() {
                     if (fallback) fallback.hidden = false
                   }}
                 />
-                <span
-                  className="vehicle-fallback"
-                  hidden
-                  aria-hidden
-                >
+                <span className="vehicle-fallback" hidden aria-hidden>
                   {meta.label.slice(0, 1)}
                 </span>
               </div>
@@ -89,7 +110,9 @@ export function VehiclePicker() {
       {design.vehicle && (
         <>
           <div className="look-row">
-            <p className="paint-label">Look</p>
+            <p className="paint-label">
+              Look · {VEHICLE_META[design.vehicle].label}
+            </p>
             <div className="look-toggle" role="tablist" aria-label="Vehicle look">
               {LOOK_MODES.map((m) => (
                 <button

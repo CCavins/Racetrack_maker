@@ -4,11 +4,25 @@ import { OrbitControls, Sky, ContactShadows } from '@react-three/drei'
 import * as THREE from 'three'
 import { buildTrack3D } from '../lib/buildTrack3D'
 import { useTrackStore } from '../state/trackStore'
-import { VEHICLE_META } from '../types'
+import { VEHICLE_META, getRaceVehicles, type VehicleId } from '../types'
 import { TrackMesh } from './TrackMesh'
 import { PropInstances } from './PropInstances'
-import { Vehicle, type VehicleState } from './Vehicle'
+import { Vehicle, type PeerSnapshot, type VehicleState } from './Vehicle'
 import './RaceView.css'
+
+const START_LATERAL = [-1.05, -0.35, 0.35, 1.05]
+const START_T = [0, 0.012, 0.024, 0.036]
+
+function emptyState(id: VehicleId): VehicleState {
+  return {
+    position: new THREE.Vector3(),
+    quaternion: new THREE.Quaternion(),
+    t: 0,
+    lap: 0,
+    lateral: 0,
+    vehicleId: id,
+  }
+}
 
 function SceneReady({ onReady }: { onReady: () => void }) {
   useEffect(() => {
@@ -28,33 +42,35 @@ function SceneContent({
   chaseCam,
   chaseDistance,
   chaseOrbit,
+  chaseIndex,
   onLap,
-  stateRef,
+  stateRefs,
+  peersRef,
+  racers,
   running,
   onReady,
 }: {
   chaseCam: boolean
   chaseDistance: number
   chaseOrbit: number
-  onLap: (n: number) => void
-  stateRef: React.MutableRefObject<VehicleState>
+  chaseIndex: number
+  onLap: (n: number, vehicleId: VehicleId) => void
+  stateRefs: React.MutableRefObject<VehicleState>[]
+  peersRef: React.MutableRefObject<PeerSnapshot[]>
+  racers: VehicleId[]
   running: boolean
   onReady: () => void
 }) {
   const { design } = useTrackStore()
   const track = useMemo(() => buildTrack3D(design), [design])
 
-  if (!track || !design.vehicle) return null
+  if (!track || racers.length === 0) return null
 
   const pad = 18
   const { minX, maxX, minZ, maxZ } = track.bounds
   const groundSize = Math.max(maxX - minX, maxZ - minZ) + pad * 2
   const look = design.vehicleLook ?? 'stock'
-  const vehicleColor =
-    look === 'paint'
-      ? (design.vehicleColor ?? VEHICLE_META[design.vehicle].color)
-      : VEHICLE_META[design.vehicle].color
-  const vehicleWrap = look === 'wrap' ? design.vehicleWrap : null
+  const chaseState = stateRefs[chaseIndex] ?? stateRefs[0]
 
   return (
     <>
@@ -89,21 +105,39 @@ function SceneContent({
 
       <TrackMesh track={track} />
       <PropInstances props={track.props} decals={track.decals} />
-      <Vehicle
-        track={track}
-        vehicleId={design.vehicle}
-        vehicleLook={look}
-        vehicleColor={vehicleColor}
-        vehicleWrap={vehicleWrap}
-        reverseDirection={design.reverseDirection}
-        chaseCam={chaseCam}
-        chaseDistance={chaseDistance}
-        chaseOrbit={chaseOrbit}
-        showBeacon={!chaseCam}
-        running={running}
-        stateRef={stateRef}
-        onLap={onLap}
-      />
+
+      {racers.map((id, i) => {
+        const focused = design.vehicle === id
+        const racerLook = focused ? look : 'stock'
+        const vehicleColor =
+          focused && look === 'paint'
+            ? (design.vehicleColor ?? VEHICLE_META[id].color)
+            : VEHICLE_META[id].color
+        const vehicleWrap =
+          focused && look === 'wrap' ? design.vehicleWrap : null
+        return (
+          <Vehicle
+            key={`${id}-${i}`}
+            track={track}
+            vehicleId={id}
+            vehicleLook={racerLook}
+            vehicleColor={vehicleColor}
+            vehicleWrap={vehicleWrap}
+            reverseDirection={design.reverseDirection}
+            chaseCam={chaseCam && i === chaseIndex}
+            chaseDistance={chaseDistance}
+            chaseOrbit={chaseOrbit}
+            showBeacon={!chaseCam || i !== chaseIndex}
+            running={running}
+            stateRef={stateRefs[i]}
+            racerIndex={i}
+            peersRef={peersRef}
+            startT={START_T[i] ?? i * 0.012}
+            startLateral={START_LATERAL[i] ?? 0}
+            onLap={onLap}
+          />
+        )
+      })}
 
       <ContactShadows
         position={[0, 0.01, 0]}
@@ -123,13 +157,12 @@ function SceneContent({
         />
       )}
 
-      {!chaseCam && <CarScreenProjector stateRef={stateRef} />}
+      {!chaseCam && chaseState && <CarScreenProjector stateRef={chaseState} />}
       <SceneReady onReady={onReady} />
     </>
   )
 }
 
-/** Projects car to NDC and writes into a DOM-readable ref via custom event bus */
 const screenBus = {
   x: 0.5,
   y: 0.5,
@@ -164,7 +197,6 @@ function CarScreenProjector({
     screenBus.x = sx / size.width
     screenBus.y = sy / size.height
 
-    // heading from car toward screen center of view (for offscreen arrow)
     const cx = size.width / 2
     const cy = size.height / 2
     screenBus.heading = Math.atan2(sy - cy, sx - cx)
@@ -190,10 +222,8 @@ function CarEdgeHint({ active }: { active: boolean }) {
         } else {
           const ang = screenBus.heading
           const pad = 28
-          // place arrow on screen edge in direction of car
           const ux = Math.cos(ang)
           const uy = Math.sin(ang)
-          // intersect with inset rectangle
           const aw = window.innerWidth
           const ah = window.innerHeight
           const cx = aw / 2
@@ -229,13 +259,25 @@ function CarEdgeHint({ active }: { active: boolean }) {
   )
 }
 
+type BoardRow = {
+  index: number
+  id: VehicleId
+  label: string
+  lap: number
+  t: number
+  progress: number
+  place: number
+}
+
 export function RaceView() {
   const { design, setStep, bestLapMs, recordLapTime, setLoadStatus } =
     useTrackStore()
+  const racers = useMemo(() => getRaceVehicles(design), [design])
   const [chaseCam, setChaseCam] = useState(true)
   const [chaseDistance, setChaseDistance] = useState(8)
   const [chaseOrbit, setChaseOrbit] = useState(0)
-  const [lap, setLap] = useState(0)
+  const [chaseIndex, setChaseIndex] = useState(0)
+  const [board, setBoard] = useState<BoardRow[]>([])
   const [lastLapMs, setLastLapMs] = useState<number | null>(null)
   const [sceneReady, setSceneReady] = useState(false)
   const lapStartRef = useRef(performance.now())
@@ -243,15 +285,37 @@ export function RaceView() {
   const chaseOrbitRef = useRef(0)
   chaseOrbitRef.current = chaseOrbit
   const wrapRef = useRef<HTMLDivElement>(null)
-  const stateRef = useRef<VehicleState>({
-    position: new THREE.Vector3(),
-    quaternion: new THREE.Quaternion(),
-    t: 0,
-    lap: 0,
-  })
-  const vehicleLabel = design.vehicle
-    ? VEHICLE_META[design.vehicle].label
-    : 'Vehicle'
+
+  const stateRefs = useMemo(
+    () => racers.map((id) => ({ current: emptyState(id) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset with lineup identity
+    [racers.join('|')],
+  )
+  const peersRef = useRef<PeerSnapshot[]>(
+    racers.map(() => ({
+      t: 0,
+      lap: 0,
+      lateral: 0,
+      radius: 0.75,
+      active: false,
+    })),
+  )
+
+  useEffect(() => {
+    peersRef.current = racers.map(() => ({
+      t: 0,
+      lap: 0,
+      lateral: 0,
+      radius: 0.75,
+      active: false,
+    }))
+    setChaseIndex(0)
+    setBoard([])
+  }, [racers.join('|')])
+
+  useEffect(() => {
+    if (chaseIndex >= racers.length) setChaseIndex(0)
+  }, [chaseIndex, racers.length])
 
   const markReady = useCallback(() => {
     setSceneReady(true)
@@ -259,16 +323,55 @@ export function RaceView() {
     lapStartRef.current = performance.now()
   }, [setLoadStatus])
 
-  const onLap = (n: number) => {
-    const now = performance.now()
-    const ms = now - lapStartRef.current
-    lapStartRef.current = now
-    if (n > 0) {
-      setLastLapMs(ms)
-      recordLapTime(ms)
+  const onLap = useCallback(
+    (n: number, vehicleId: VehicleId) => {
+      const now = performance.now()
+      const ms = now - lapStartRef.current
+      // Per-field last/best from any car crossing
+      if (n > 0) {
+        setLastLapMs(ms)
+        recordLapTime(ms)
+      }
+      void vehicleId
+    },
+    [recordLapTime],
+  )
+
+  // Poll leaderboard from shared state refs (~8 Hz)
+  useEffect(() => {
+    if (!sceneReady) return
+    let raf = 0
+    let last = 0
+    const tick = (now: number) => {
+      if (now - last > 120) {
+        last = now
+        const reverse = design.reverseDirection
+        const rows: BoardRow[] = racers.map((id, index) => {
+          const s = stateRefs[index]?.current
+          const lap = s?.lap ?? 0
+          const t = s?.t ?? 0
+          const progress = reverse ? lap + (1 - t) : lap + t
+          return {
+            index,
+            id,
+            label: VEHICLE_META[id].label,
+            lap,
+            t,
+            progress,
+            place: 0,
+          }
+        })
+        rows.sort((a, b) => b.progress - a.progress)
+        rows.forEach((r, i) => {
+          r.place = i + 1
+        })
+        setBoard(rows)
+      }
+      raf = requestAnimationFrame(tick)
     }
-    setLap(n)
-  }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [sceneReady, racers, stateRefs, design.reverseDirection])
 
   useEffect(() => {
     if (!sceneReady) setLoadStatus('Rendering scene…')
@@ -290,7 +393,6 @@ export function RaceView() {
     }
     const onPointerDown = (e: PointerEvent) => {
       if (!chaseCam) return
-      // Ignore HUD buttons
       if ((e.target as HTMLElement).closest('.race-hud')) return
       dragRef.current = { x: e.clientX, orbit: chaseOrbitRef.current }
       el.setPointerCapture(e.pointerId)
@@ -327,6 +429,13 @@ export function RaceView() {
     return `${s.toFixed(2)}s`
   }
 
+  const chaseLabel =
+    racers[chaseIndex] != null
+      ? VEHICLE_META[racers[chaseIndex]].label
+      : 'Vehicle'
+  const chasePlace =
+    board.find((r) => r.index === chaseIndex)?.place ?? null
+
   return (
     <div className="race-view" ref={wrapRef}>
       <Canvas
@@ -339,8 +448,11 @@ export function RaceView() {
             chaseCam={chaseCam}
             chaseDistance={chaseDistance}
             chaseOrbit={chaseOrbit}
+            chaseIndex={chaseIndex}
             onLap={onLap}
-            stateRef={stateRef}
+            stateRefs={stateRefs}
+            peersRef={peersRef}
+            racers={racers}
             running={sceneReady}
             onReady={markReady}
           />
@@ -367,17 +479,55 @@ export function RaceView() {
         <div className="hud-left">
           <p className="hud-brand">Circuit Sketch</p>
           <p className="hud-meta">
-            {vehicleLabel} · Lap {lap + 1}
+            Chase {chaseLabel}
+            {chasePlace != null ? ` · P${chasePlace}` : ''}
             {design.reverseDirection ? ' · CCW' : ' · CW'}
             {chaseCam
               ? ` · Zoom ${chaseDistance.toFixed(0)}m · drag to peek`
-              : ' · Orbit · yellow beacon = car'}
+              : ' · Orbit · beacons = cars'}
           </p>
           <p className="hud-times">
             {lastLapMs !== null ? `Last ${fmt(lastLapMs)}` : 'Last —'}
             {' · '}
             {bestLapMs !== null ? `Best ${fmt(bestLapMs)}` : 'Best —'}
           </p>
+          {board.length > 1 && (
+            <ol className="hud-board">
+              {board.map((row) => (
+                <li
+                  key={`${row.id}-${row.index}`}
+                  className={
+                    row.index === chaseIndex ? 'hud-board-row active' : 'hud-board-row'
+                  }
+                >
+                  <button
+                    type="button"
+                    className="hud-board-btn"
+                    onClick={() => setChaseIndex(row.index)}
+                    title={`Chase ${row.label}`}
+                  >
+                    <span className="hud-place">P{row.place}</span>
+                    <span className="hud-racer">{row.label}</span>
+                    <span className="hud-lap">L{row.lap + 1}</span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+          {racers.length > 1 && board.length <= 1 && (
+            <div className="hud-chase-picks">
+              {racers.map((id, i) => (
+                <button
+                  key={`${id}-${i}`}
+                  type="button"
+                  className={`hud-chip ${i === chaseIndex ? 'active' : ''}`}
+                  onClick={() => setChaseIndex(i)}
+                >
+                  {VEHICLE_META[id].label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="hud-right">
           <button

@@ -4,6 +4,13 @@
   gap: 0.65rem;
 }
 
+.vehicle-lineup-hint {
+  margin: -0.25rem 0 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.68rem;
+  color: #8a8680;
+}
+
 .vehicle-list {
   display: flex;
   flex-direction: column;
@@ -23,16 +30,26 @@
   cursor: pointer;
   text-align: left;
   color: inherit;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
 }
 
-.vehicle-card:hover {
+.vehicle-card:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
 }
 
 .vehicle-card.active {
   border-color: #e8b923;
   background: rgba(232, 185, 35, 0.12);
+}
+
+.vehicle-card.focused {
+  background: rgba(232, 185, 35, 0.18);
+}
+
+.vehicle-card.dimmed,
+.vehicle-card:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .vehicle-thumb {
@@ -43,6 +60,24 @@
   place-items: center;
   overflow: hidden;
   position: relative;
+}
+
+.vehicle-slot {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  z-index: 1;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: rgba(18, 20, 22, 0.85);
+  color: #e8b923;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.58rem;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
 }
 
 .vehicle-thumb img {

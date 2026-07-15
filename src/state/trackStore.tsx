@@ -17,7 +17,13 @@ import type {
   VehicleLookMode,
   Vec2,
 } from '../types'
-import { LEGACY_VEHICLE_MAP, STICKER_TYPES, VEHICLE_IDS } from '../types'
+import {
+  LEGACY_VEHICLE_MAP,
+  MAX_RACERS,
+  STICKER_TYPES,
+  VEHICLE_IDS,
+  getRaceVehicles,
+} from '../types'
 import { createCirclePath, resnapStickersToPath } from '../lib/pathSmooth'
 
 const STORAGE_KEY = 'circuit-sketch-v1'
@@ -74,6 +80,7 @@ type TrackStore = {
   selectedPointIndex: number | null
   setSelectedPointIndex: (i: number | null) => void
   setVehicle: (v: VehicleId) => void
+  toggleVehicle: (v: VehicleId) => void
   setVehicleLook: (look: import('../types').VehicleLookMode) => void
   setVehicleColor: (color: string | null) => void
   setVehicleWrap: (wrap: string | null) => void
@@ -98,6 +105,7 @@ const MIN_POINTS = 4
 const emptyDesign = (): TrackDesign => ({
   path: [],
   stickers: [],
+  vehicles: [],
   vehicle: null,
   vehicleLook: 'stock',
   vehicleColor: null,
@@ -105,6 +113,22 @@ const emptyDesign = (): TrackDesign => ({
   reverseDirection: false,
   closed: true,
 })
+
+function normalizeVehicles(
+  raw: Partial<TrackDesign>,
+  focus: VehicleId | null,
+): VehicleId[] {
+  const fromList: VehicleId[] = []
+  if (Array.isArray(raw.vehicles)) {
+    for (const v of raw.vehicles) {
+      const id = resolveVehicleId(v)
+      if (id && !fromList.includes(id)) fromList.push(id)
+      if (fromList.length >= MAX_RACERS) break
+    }
+  }
+  if (fromList.length === 0 && focus) fromList.push(focus)
+  return fromList
+}
 
 let stickerSeq = 0
 
@@ -173,12 +197,17 @@ function normalizeDesign(raw: Partial<TrackDesign>): TrackDesign {
         : raw.vehicleColor
           ? 'paint'
           : 'stock'
+  const focus = resolveVehicleId(raw.vehicle)
+  const vehicles = normalizeVehicles(raw, focus)
+  const vehicle =
+    focus && vehicles.includes(focus) ? focus : vehicles[0] ?? null
   return {
     ...emptyDesign(),
     ...raw,
     stickers: Array.isArray(raw.stickers) ? raw.stickers : [],
     path: Array.isArray(raw.path) ? raw.path : [],
-    vehicle: resolveVehicleId(raw.vehicle),
+    vehicles,
+    vehicle,
     vehicleLook: look,
     vehicleColor: raw.vehicleColor ?? null,
     vehicleWrap: raw.vehicleWrap ?? null,
@@ -346,7 +375,7 @@ function loadPersisted(): {
     const restoredStep: AppStep =
       step === 'race' &&
       design.path.length >= 4 &&
-      design.vehicle !== null
+      getRaceVehicles(design).length > 0
         ? 'race'
         : 'draw'
     const canvasSize =
@@ -560,7 +589,43 @@ export function TrackProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setVehicle = useCallback((v: VehicleId) => {
-    setDesign((d) => ({ ...d, vehicle: v }))
+    setDesign((d) => {
+      const list = [...getRaceVehicles(d)]
+      if (!list.includes(v)) {
+        if (list.length >= MAX_RACERS) {
+          // Replace focused slot when full
+          const fi = d.vehicle ? list.indexOf(d.vehicle) : 0
+          const at = fi >= 0 ? fi : 0
+          list[at] = v
+        } else {
+          list.push(v)
+        }
+      }
+      return { ...d, vehicles: list, vehicle: v }
+    })
+  }, [])
+
+  const toggleVehicle = useCallback((v: VehicleId) => {
+    setDesign((d) => {
+      const list = [...getRaceVehicles(d)]
+      const idx = list.indexOf(v)
+      if (idx >= 0) {
+        list.splice(idx, 1)
+        const nextFocus =
+          d.vehicle && list.includes(d.vehicle) ? d.vehicle : list[0] ?? null
+        return {
+          ...d,
+          vehicles: list,
+          vehicle: nextFocus,
+          ...(list.length === 0
+            ? { vehicleLook: 'stock' as const, vehicleColor: null }
+            : {}),
+        }
+      }
+      if (list.length >= MAX_RACERS) return d
+      list.push(v)
+      return { ...d, vehicles: list, vehicle: v }
+    })
   }, [])
 
   const setVehicleLook = useCallback((look: VehicleLookMode) => {
@@ -659,6 +724,7 @@ export function TrackProvider({ children }: { children: ReactNode }) {
     setDesign({
       path: createCirclePath(width, height),
       stickers: [],
+      vehicles: [],
       vehicle: null,
       vehicleLook: 'stock',
       vehicleColor: null,
@@ -675,7 +741,9 @@ export function TrackProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const canGenerate =
-    design.closed && design.path.length >= MIN_POINTS && design.vehicle !== null
+    design.closed &&
+    design.path.length >= MIN_POINTS &&
+    getRaceVehicles(design).length > 0
 
   const value = useMemo(
     () => ({
@@ -702,6 +770,7 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       selectedPointIndex,
       setSelectedPointIndex,
       setVehicle,
+      toggleVehicle,
       setVehicleLook,
       setVehicleColor,
       setVehicleWrap,
@@ -734,6 +803,7 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       selectedStickerId,
       selectedPointIndex,
       setVehicle,
+      toggleVehicle,
       setVehicleLook,
       setVehicleColor,
       setVehicleWrap,

@@ -1,7 +1,12 @@
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { TextureLoader, SRGBColorSpace } from 'three'
 import { useGLTF } from '@react-three/drei'
-import type { TrackDesign, VehicleId, StickerType } from '../types'
+import {
+  getRaceVehicles,
+  type TrackDesign,
+  type VehicleId,
+  type StickerType,
+} from '../types'
 
 const BASE = import.meta.env.BASE_URL
 
@@ -109,15 +114,18 @@ export async function preloadRaceAssets(
 ): Promise<void> {
   const jobs: Promise<unknown>[] = []
 
-  if (design.vehicle) {
-    const url = VEHICLE_GLB_URLS[design.vehicle]
+  const racers = getRaceVehicles(design)
+  let needKenneyTex = false
+  for (const id of racers) {
+    const url = VEHICLE_GLB_URLS[id]
     if (url) {
-      onProgress?.(`Loading ${design.vehicle}…`)
+      onProgress?.(`Loading ${id}…`)
       jobs.push(loadGltf(url))
     }
-    if (KENNEY_VEHICLES.has(design.vehicle)) {
-      jobs.push(loadTexture(`${BASE}assets/vehicles/Textures/colormap.png`))
-    }
+    if (KENNEY_VEHICLES.has(id)) needKenneyTex = true
+  }
+  if (needKenneyTex) {
+    jobs.push(loadTexture(`${BASE}assets/vehicles/Textures/colormap.png`))
   }
 
   const propTypes = new Set(

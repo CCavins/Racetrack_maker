@@ -48,11 +48,20 @@ export type Sticker = {
 
 export type VehicleLookMode = 'stock' | 'paint' | 'wrap'
 
+/** Max racers on track at once */
+export const MAX_RACERS = 4
+
 export type TrackDesign = {
   path: Vec2[]
   stickers: Sticker[]
+  /**
+   * Lineup for the race (1–4). Prefer this over singular `vehicle`.
+   * Cosmetics (look/color/wrap) apply to the focused `vehicle`.
+   */
+  vehicles: VehicleId[]
+  /** Focused vehicle for paint/wrap UI (also first racer if alone) */
   vehicle: VehicleId | null
-  /** Which look is active in the race */
+  /** Which look is active in the race for the focused vehicle */
   vehicleLook: VehicleLookMode
   /** Body paint hex (used when vehicleLook === 'paint') */
   vehicleColor: string | null
@@ -61,6 +70,19 @@ export type TrackDesign = {
   /** When true, race runs counter-clockwise (decreasing t) */
   reverseDirection: boolean
   closed: boolean
+}
+
+/** Resolve the race lineup from a design (supports legacy singular-only saves). */
+export function getRaceVehicles(design: TrackDesign): VehicleId[] {
+  if (design.vehicles?.length) {
+    const uniq: VehicleId[] = []
+    for (const id of design.vehicles) {
+      if (!uniq.includes(id)) uniq.push(id)
+      if (uniq.length >= MAX_RACERS) break
+    }
+    return uniq
+  }
+  return design.vehicle ? [design.vehicle] : []
 }
 
 /** Preset swatches for the vehicle paint picker */

@@ -216,6 +216,17 @@ export type VehicleState = {
   quaternion: THREE.Quaternion
   t: number
   lap: number
+  lateral: number
+  vehicleId: VehicleId
+}
+
+/** Shared snapshot so racers can steer around each other */
+export type PeerSnapshot = {
+  t: number
+  lap: number
+  lateral: number
+  radius: number
+  active: boolean
 }
 
 type Props = {
@@ -232,7 +243,14 @@ type Props = {
   /** When false, hold still until assets / scene are ready */
   running?: boolean
   stateRef: MutableRefObject<VehicleState>
-  onLap?: (lap: number) => void
+  /** Index into peersRef for this racer */
+  racerIndex?: number
+  peersRef?: MutableRefObject<PeerSnapshot[]>
+  /** Starting progress along the lap (stagger grid) */
+  startT?: number
+  /** Starting lateral lane offset */
+  startLateral?: number
+  onLap?: (lap: number, vehicleId: VehicleId) => void
 }
 
 export function Vehicle({
@@ -248,10 +266,14 @@ export function Vehicle({
   showBeacon,
   running = true,
   stateRef,
+  racerIndex = 0,
+  peersRef,
+  startT = 0,
+  startLateral = 0,
   onLap,
 }: Props) {
   const groupRef = useRef<THREE.Group>(null)
-  const tRef = useRef(0)
+  const tRef = useRef(startT)
   const lapRef = useRef(0)
   const weaveRef = useRef(0)
   const boostRef = useRef(0)
@@ -271,7 +293,8 @@ export function Vehicle({
   const wasAirborne = useRef(false)
   const prevSlopeRef = useRef(0)
   const jumpCooldownRef = useRef(0)
-  const avoidLatRef = useRef(0)
+  const avoidLatRef = useRef(startLateral)
+  const peerSlowRef = useRef(0)
   const hitSpinRef = useRef(0)
   const hitLatVelRef = useRef(0)
   const hitSlowRef = useRef(0)
@@ -282,6 +305,7 @@ export function Vehicle({
   const smoothQuatRef = useRef(new THREE.Quaternion())
   const smoothPitchRef = useRef(0)
   const motionReadyRef = useRef(false)
+  const lateralOutRef = useRef(startLateral)
 
   const wrapMap = useMemo(() => {
     if (vehicleLook !== 'wrap' || !vehicleWrap) return null
@@ -453,13 +477,14 @@ export function Vehicle({
       oilAngleRef.current = THREE.MathUtils.damp(a, 0, 6, delta)
     }
 
-    // Avoidance: steer away from upcoming obstacles
-    let avoidTarget = 0
+    // Avoidance: steer away from upcoming obstacles + peer racers
+    let avoidTarget = startLateral
     const lookWindow = 0.08 // ~8% of lap ahead
     for (const obs of track.obstacles) {
       let dt = obs.t - tNow
       if (dt < -0.5) dt += 1
       if (dt > 0.5) dt -= 1
+      if (reverseDirection) dt = -dt
       if (dt < -0.01 || dt > lookWindow) continue
 
       // Prefer opposite side of obstacle; if on centerline pick a stable side
@@ -475,13 +500,72 @@ export function Vehicle({
         ROAD_HALF - 0.35,
         obs.radius + carRadius + 0.55,
       )
-      avoidTarget += sidePref * clearance * urgency
+      avoidTarget += sidePref * clearance * urgency * 0.85
     }
-    avoidTarget = THREE.MathUtils.clamp(avoidTarget, -ROAD_HALF + 0.2, ROAD_HALF - 0.2)
+
+    // Smooth peer separation — ease aside, lightly lift off the throttle
+    let peerSlow = 0
+    const peers = peersRef?.current
+    if (peers) {
+      const myLat = lateralOutRef.current
+      for (let i = 0; i < peers.length; i++) {
+        if (i === racerIndex) continue
+        const peer = peers[i]
+        if (!peer?.active) continue
+
+        // Progress delta in travel direction (ahead = positive)
+        let dProg =
+          peer.lap - lapRef.current + (peer.t - tNow)
+        if (reverseDirection) dProg = -dProg
+        // Wrap short gaps across the start/finish
+        if (dProg > 0.5) dProg -= 1
+        if (dProg < -0.5) dProg += 1
+
+        const latGap = peer.lateral - myLat
+        const absLat = Math.abs(latGap)
+        const needSep = carRadius + peer.radius + 0.55
+
+        // Peer ahead in our lane → ease off and drift aside
+        if (dProg > 0.002 && dProg < 0.07) {
+          const along = 1 - dProg / 0.07
+          if (absLat < needSep) {
+            const side =
+              absLat < 0.08
+                ? racerIndex % 2 === 0
+                  ? 1
+                  : -1
+                : -Math.sign(latGap || 1)
+            const push = (needSep - absLat) * along * 1.15
+            avoidTarget += side * push
+            peerSlow = Math.max(peerSlow, along * 0.28)
+          }
+        }
+
+        // Peer beside / slightly behind overlapping lane → gentle spread
+        if (Math.abs(dProg) < 0.035 && absLat < needSep) {
+          const side =
+            absLat < 0.06
+              ? racerIndex % 2 === 0
+                ? 1
+                : -1
+              : -Math.sign(latGap || 1)
+          const overlap = (needSep - absLat) / needSep
+          avoidTarget += side * overlap * 0.7
+        }
+      }
+    }
+    peerSlowRef.current = THREE.MathUtils.damp(
+      peerSlowRef.current,
+      peerSlow,
+      4,
+      delta,
+    )
+
+    avoidTarget = THREE.MathUtils.clamp(avoidTarget, -ROAD_HALF + 0.25, ROAD_HALF - 0.25)
     avoidLatRef.current = THREE.MathUtils.damp(
       avoidLatRef.current,
       avoidTarget,
-      2.6,
+      2.2,
       delta,
     )
 
@@ -489,7 +573,8 @@ export function Vehicle({
     const speedMul =
       (1 + boostRef.current * 0.85) *
       (hitSlowRef.current > 0 ? 0.78 : 1) *
-      (onOilSpin ? 0.42 : 1)
+      (onOilSpin ? 0.42 : 1) *
+      (1 - peerSlowRef.current)
     const dt =
       ((reverseDirection ? -1 : 1) * baseSpeed * speedMul * delta * 60) / len
     const prevT = tRef.current
@@ -499,7 +584,7 @@ export function Vehicle({
     const crossedReverse = reverseDirection && tRef.current > prevT + 0.5
     if (crossedForward || crossedReverse) {
       lapRef.current += 1
-      onLap?.(lapRef.current)
+      onLap?.(lapRef.current, vehicleId)
     }
 
     const t = tRef.current
@@ -554,6 +639,7 @@ export function Vehicle({
       -ROAD_HALF + 0.15,
       ROAD_HALF - 0.15,
     )
+    lateralOutRef.current = clampedLateral
 
     // jumps — follow the ramp up, loft once off the crest, then land without re-bouncing
     const roadY = pos.y
@@ -737,6 +823,24 @@ export function Vehicle({
       quaternion: smoothQuatRef.current.clone(),
       t,
       lap: lapRef.current,
+      lateral: clampedLateral,
+      vehicleId,
+    }
+
+    if (peersRef) {
+      const slot = peersRef.current[racerIndex] ?? {
+        t: 0,
+        lap: 0,
+        lateral: 0,
+        radius: carRadius,
+        active: true,
+      }
+      slot.t = t
+      slot.lap = lapRef.current
+      slot.lateral = clampedLateral
+      slot.radius = carRadius
+      slot.active = true
+      peersRef.current[racerIndex] = slot
     }
 
     if (chaseCam) {
