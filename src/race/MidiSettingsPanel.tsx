@@ -50,9 +50,9 @@ export function MidiSettingsPanel({ open, onClose, racers }: Props) {
         </div>
         <p className="midi-panel-status">{statusLine}</p>
         <p className="midi-panel-hint">
-          Min = crawl · Max = very fast. Overspeed in corners drifts onto the
-          grass and can spin out. Press Learn, then twist a knob to remap.
-          Esc cancels learn.
+          Slot-car style: full throw on straights, lift for corners and
+          obstacles — overspeed slides you wide and can spin you out. Esc
+          cancels learn.
         </p>
 
         <ul className="midi-slot-list">

@@ -672,9 +672,9 @@ export function Vehicle({
     // Shared MIDI / slider pace — equal capability across vehicle models
     const baseSpeed = speed01ToBase(speedRef.current)
 
-    // Local + look-ahead bend so sharp corners register (wide ±0.01 was too soft)
-    const lookNear = 0.0035
-    const lookFar = 0.022
+    // Local + look-ahead bend (sensitive — even mild curves demand lift)
+    const lookNear = 0.003
+    const lookFar = 0.028
     const tanFlat = curve.getTangentAt(tNow).clone()
     tanFlat.y = 0
     if (tanFlat.lengthSq() > 1e-8) tanFlat.normalize()
@@ -698,55 +698,83 @@ export function Vehicle({
     const turnFar = Math.acos(
       THREE.MathUtils.clamp(tanFlat.dot(tanFar), -1, 1),
     )
+    // Aggressive: small heading changes already count as "a corner"
     const turnFactor = Math.max(
-      THREE.MathUtils.smoothstep(0.012, 0.2, turnNear),
-      THREE.MathUtils.smoothstep(0.035, 0.36, turnFar),
+      THREE.MathUtils.smoothstep(0.006, 0.12, turnNear),
+      THREE.MathUtils.smoothstep(0.02, 0.28, turnFar),
     )
     const turnSigned = tanFlat.x * tanFar.z - tanFlat.z * tanFar.x
 
+    // Obstacles ahead slash safe speed (slot-car: lift before the wreck)
+    let obstacleThreat = 0
+    if (canMove) {
+      const threatWindow = 0.07
+      for (const obs of track.obstacles) {
+        let dto = obs.t - tNow
+        if (dto < -0.5) dto += 1
+        if (dto > 0.5) dto -= 1
+        if (reverseDirection) dto = -dto
+        if (dto < -0.005 || dto > threatWindow) continue
+        const latGap = Math.abs(obs.lateral - lateralOutRef.current)
+        if (latGap > obs.radius + carRadius + 0.85) continue
+        const urgency = 1 - dto / threatWindow
+        obstacleThreat = Math.max(obstacleThreat, urgency)
+      }
+    }
+
     const provisionalMul =
-      (1 + boostRef.current * 0.85) *
-      (hitSlowRef.current > 0 ? 0.78 : 1) *
-      (onOilSpin ? 0.42 : 1) *
+      (1 + boostRef.current * 0.55) *
+      (hitSlowRef.current > 0 ? 0.72 : 1) *
+      (onOilSpin ? 0.38 : 1) *
       (1 - peerSlowRef.current)
     const provisionalSpeed = baseSpeed * provisionalMul
 
-    // Straights forgive max MIDI; sharp bends slide well below max
-    const maxSafe = THREE.MathUtils.lerp(0.3, 0.048, turnFactor)
-    const ratio = provisionalSpeed / Math.max(maxSafe, 0.035)
+    // Straights allow near-max; medium bends need ~half throw; hairpins crawl
+    const bendSafe = THREE.MathUtils.lerp(
+      0.44,
+      0.028,
+      turnFactor * turnFactor,
+    )
+    const maxSafe =
+      bendSafe * THREE.MathUtils.lerp(1, 0.4, obstacleThreat)
+    const ratio = provisionalSpeed / Math.max(maxSafe, 0.025)
     const outward = Math.sign(turnSigned || 1)
 
-    if (canMove && ratio > 1.04 && oilSpinRef.current <= 0) {
+    if (canMove && ratio > 1.02 && oilSpinRef.current <= 0) {
       const excess = ratio - 1
+      // Slot-car: overspeed dumps you wide hard and fast
       cornerDriftRef.current +=
-        outward * (0.4 * excess + 1.25 * excess * excess) * delta * 60
+        outward * (0.85 * excess + 2.8 * excess * excess) * delta * 60
     } else if (canMove && oilSpinRef.current <= 0) {
       cornerDriftRef.current = THREE.MathUtils.damp(
         cornerDriftRef.current,
         0,
-        recovering ? 2.6 : 1.7,
+        recovering ? 3.0 : 2.2,
         delta,
       )
     }
 
     const absLatNow = Math.abs(lateralOutRef.current)
-    const farOff = absLatNow > asphaltHalf + 0.35
+    const farOff = absLatNow > asphaltHalf + 0.25
+    // Derail if way too hot in a bend — even before fully off asphalt
+    const hotCorner =
+      ratio > 1.35 && turnFactor > 0.18 && absLatNow > asphaltHalf * 0.55
     if (
       canMove &&
-      farOff &&
-      ratio > 1.12 &&
+      (farOff || hotCorner) &&
+      ratio > 1.1 &&
       oilSpinRef.current <= 0 &&
       spinCooldownRef.current <= 0
     ) {
-      oilSpinRef.current = 1.35
-      spinCooldownRef.current = 3.0
+      oilSpinRef.current = 1.5
+      spinCooldownRef.current = 2.6
     }
 
     if (oilSpinRef.current > 0) {
       cornerDriftRef.current = THREE.MathUtils.damp(
         cornerDriftRef.current,
-        Math.sign(cornerDriftRef.current || outward) * asphaltHalf * 0.85,
-        2.2,
+        Math.sign(cornerDriftRef.current || outward) * asphaltHalf * 0.9,
+        2.0,
         delta,
       )
     }
@@ -756,20 +784,28 @@ export function Vehicle({
       lateralLimit - 0.2,
     )
 
-    // Don't fight drift by yanking hard to center while overspeeding
-    if (canMove && Math.abs(cornerDriftRef.current) > 0.25 && ratio > 1.05) {
+    // While overspeeding, don't steer back to center — commit the slide
+    if (canMove && ratio > 1.05) {
       avoidLatRef.current = THREE.MathUtils.damp(
         avoidLatRef.current,
-        avoidLatRef.current * 0.65,
-        1.4,
+        avoidLatRef.current * 0.4,
+        2.2,
         delta,
       )
     }
 
     const onGrass = absLatNow > asphaltHalf
 
+    // Sliding scrub: overspeed bleeds pace (must lift the knob to recover)
+    const scrub =
+      ratio > 1
+        ? 1 / (1 + (ratio - 1) * 1.35)
+        : 1
+
     const speedMul =
-      (canMove ? provisionalMul : 0) * (onGrass ? 0.35 : 1)
+      (canMove ? provisionalMul : 0) *
+      (onGrass ? 0.28 : 1) *
+      scrub
     const dt =
       ((reverseDirection ? -1 : 1) * baseSpeed * speedMul * delta * 60) / len
     const prevT = tRef.current

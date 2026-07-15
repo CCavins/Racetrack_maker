@@ -206,8 +206,8 @@ export function EditorShell() {
             />
           </label>
           <p className="race-settings-hint">
-            Cars line up side-by-side, then 3-2-1. MIDI knobs map to racer
-            slots when enabled.
+            Slot-car speeds: full on straights, lift for corners. MIDI knobs map
+            to racer slots when enabled. Cars line up side-by-side, then 3-2-1.
           </p>
         </div>
 
