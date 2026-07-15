@@ -6,10 +6,9 @@ import type { TrackDesign, VehicleId, StickerType } from '../types'
 const BASE = import.meta.env.BASE_URL
 
 export const VEHICLE_GLB_URLS: Partial<Record<VehicleId, string>> = {
-  sports: `${BASE}assets/vehicles/sports.glb`,
   motorcycle: `${BASE}assets/vehicles/motorcycle.glb`,
-  semi: `${BASE}assets/vehicles/semi.glb`,
-  minivan: `${BASE}assets/vehicles/minivan.glb`,
+  truck: `${BASE}assets/vehicles/truck.glb`,
+  van: `${BASE}assets/vehicles/van.glb`,
   race: `${BASE}assets/vehicles/race.glb`,
   sedan: `${BASE}assets/vehicles/sedan.glb`,
   taxi: `${BASE}assets/vehicles/taxi.glb`,
@@ -35,6 +34,9 @@ export const PROP_GLB_URLS: Partial<Record<StickerType, string>> = {
 /** Kenney kit vehicles reference a shared colormap beside the GLB */
 const KENNEY_VEHICLES = new Set<VehicleId>([
   'race',
+  'motorcycle',
+  'truck',
+  'van',
   'sedan',
   'taxi',
   'police',

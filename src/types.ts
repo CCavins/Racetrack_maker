@@ -13,10 +13,9 @@ export type StickerType =
   | 'water'
 
 export type VehicleId =
-  | 'sports'
   | 'motorcycle'
-  | 'semi'
-  | 'minivan'
+  | 'truck'
+  | 'van'
   | 'race'
   | 'sedan'
   | 'taxi'
@@ -28,6 +27,13 @@ export type VehicleId =
   | 'hovercar'
   | 'cruiser'
   | 'muscle'
+
+/** Old Higgsfield ids → current Kenney replacements (saved tracks / imports) */
+export const LEGACY_VEHICLE_MAP: Record<string, VehicleId> = {
+  sports: 'race',
+  semi: 'truck',
+  minivan: 'van',
+}
 
 export type Sticker = {
   id: string
@@ -93,11 +99,10 @@ export const VEHICLE_META: Record<
   VehicleId,
   { label: string; speed: number; color: string }
 > = {
-  sports: { label: 'Sports Car', speed: 0.12, color: '#e63946' },
-  motorcycle: { label: 'Motorcycle', speed: 0.16, color: '#457b9d' },
-  semi: { label: 'Semi Truck', speed: 0.07, color: '#2a9d8f' },
-  minivan: { label: 'Minivan', speed: 0.09, color: '#e9c46a' },
   race: { label: 'Race Car', speed: 0.15, color: '#ef233c' },
+  motorcycle: { label: 'Motorcycle', speed: 0.16, color: '#457b9d' },
+  truck: { label: 'Pickup Truck', speed: 0.08, color: '#2a9d8f' },
+  van: { label: 'Van', speed: 0.09, color: '#e9c46a' },
   sedan: { label: 'Sedan', speed: 0.11, color: '#4cc9f0' },
   taxi: { label: 'Taxi', speed: 0.1, color: '#ffd60a' },
   police: { label: 'Police', speed: 0.13, color: '#118ab2' },

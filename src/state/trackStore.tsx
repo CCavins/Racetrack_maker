@@ -17,7 +17,7 @@ import type {
   VehicleLookMode,
   Vec2,
 } from '../types'
-import { STICKER_TYPES, VEHICLE_IDS } from '../types'
+import { LEGACY_VEHICLE_MAP, STICKER_TYPES, VEHICLE_IDS } from '../types'
 import { createCirclePath, resnapStickersToPath } from '../lib/pathSmooth'
 
 const STORAGE_KEY = 'circuit-sketch-v1'
@@ -131,6 +131,15 @@ function isVehicleId(v: unknown): v is VehicleId {
   return typeof v === 'string' && (VEHICLE_IDS as string[]).includes(v)
 }
 
+function resolveVehicleId(v: unknown): VehicleId | null {
+  if (v === null || v === undefined) return null
+  if (isVehicleId(v)) return v
+  if (typeof v === 'string' && v in LEGACY_VEHICLE_MAP) {
+    return LEGACY_VEHICLE_MAP[v]
+  }
+  return null
+}
+
 function parseSticker(raw: unknown, index: number): Sticker | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as Record<string, unknown>
@@ -169,6 +178,7 @@ function normalizeDesign(raw: Partial<TrackDesign>): TrackDesign {
     ...raw,
     stickers: Array.isArray(raw.stickers) ? raw.stickers : [],
     path: Array.isArray(raw.path) ? raw.path : [],
+    vehicle: resolveVehicleId(raw.vehicle),
     vehicleLook: look,
     vehicleColor: raw.vehicleColor ?? null,
     vehicleWrap: raw.vehicleWrap ?? null,
@@ -217,12 +227,7 @@ function parseDesignJson(json: string):
         .map(parseSticker)
         .filter((s): s is Sticker => s !== null)
     : []
-  const vehicle =
-    rawDesign.vehicle === null || rawDesign.vehicle === undefined
-      ? null
-      : isVehicleId(rawDesign.vehicle)
-        ? rawDesign.vehicle
-        : null
+  const vehicle = resolveVehicleId(rawDesign.vehicle)
   const vehicleWrap =
     typeof rawDesign.vehicleWrap === 'string' &&
     rawDesign.vehicleWrap.startsWith('data:')

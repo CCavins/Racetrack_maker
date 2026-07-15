@@ -59,7 +59,7 @@ export function VehiclePicker() {
               >
                 <img
                   src={`${import.meta.env.BASE_URL}assets/vehicles/${id}-preview.png`}
-                  alt={meta.label}
+                  alt=""
                   onError={(e) => {
                     const el = e.target as HTMLImageElement
                     el.style.display = 'none'
@@ -70,7 +70,7 @@ export function VehiclePicker() {
                 <span
                   className="vehicle-fallback"
                   hidden
-                  style={{ color: paint }}
+                  aria-hidden
                 >
                   {meta.label.slice(0, 1)}
                 </span>

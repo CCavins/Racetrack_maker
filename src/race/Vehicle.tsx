@@ -13,10 +13,9 @@ import { VEHICLE_META, type VehicleId, type VehicleLookMode } from '../types'
 import { recolorBodyMaterials } from '../lib/vehicleStyle'
 
 const VEHICLE_URLS: Record<VehicleId, string> = {
-  sports: `${import.meta.env.BASE_URL}assets/vehicles/sports.glb`,
   motorcycle: `${import.meta.env.BASE_URL}assets/vehicles/motorcycle.glb`,
-  semi: `${import.meta.env.BASE_URL}assets/vehicles/semi.glb`,
-  minivan: `${import.meta.env.BASE_URL}assets/vehicles/minivan.glb`,
+  truck: `${import.meta.env.BASE_URL}assets/vehicles/truck.glb`,
+  van: `${import.meta.env.BASE_URL}assets/vehicles/van.glb`,
   race: `${import.meta.env.BASE_URL}assets/vehicles/race.glb`,
   sedan: `${import.meta.env.BASE_URL}assets/vehicles/sedan.glb`,
   taxi: `${import.meta.env.BASE_URL}assets/vehicles/taxi.glb`,
@@ -31,10 +30,9 @@ const VEHICLE_URLS: Record<VehicleId, string> = {
 }
 
 const AVAILABLE_VEHICLE_GLBS = new Set<VehicleId>([
-  'sports',
   'motorcycle',
-  'semi',
-  'minivan',
+  'truck',
+  'van',
   'race',
   'sedan',
   'taxi',
@@ -91,24 +89,24 @@ function FallbackVehicle({
         </group>
       )
     }
-    if (id === 'semi') {
+    if (id === 'truck') {
       return (
         <group>
-          <mesh castShadow position={[0, 0.7, -0.9]}>
-            <boxGeometry args={[1.2, 1.1, 1.4]} />
+          <mesh castShadow position={[0, 0.55, -0.35]}>
+            <boxGeometry args={[1.15, 0.7, 1.3]} />
             {bodyMat}
           </mesh>
-          <mesh castShadow position={[0, 0.85, 1.2]}>
-            <boxGeometry args={[1.3, 1.4, 2.8]} />
-            <meshStandardMaterial color="#3a3a3a" metalness={0.2} roughness={0.7} />
+          <mesh castShadow position={[0, 0.4, 0.85]}>
+            <boxGeometry args={[1.1, 0.35, 1.2]} />
+            {bodyMat}
           </mesh>
         </group>
       )
     }
-    if (id === 'minivan') {
+    if (id === 'van') {
       return (
         <mesh castShadow position={[0, 0.55, 0]}>
-          <boxGeometry args={[1.1, 0.85, 2.0]} />
+          <boxGeometry args={[1.1, 0.95, 2.0]} />
           {bodyMat}
         </mesh>
       )
@@ -160,9 +158,9 @@ function LoadedVehicle({
     box.getSize(size)
     const maxDim = Math.max(size.x, size.y, size.z) || 1
     const target =
-      id === 'semi' || id === 'ambulance'
-        ? 3.2
-        : id === 'suv'
+      id === 'truck' || id === 'ambulance'
+        ? 3.0
+        : id === 'suv' || id === 'van'
           ? 2.6
           : id === 'motorcycle'
             ? 1.6
@@ -253,6 +251,9 @@ export function Vehicle({
   const lapRef = useRef(0)
   const weaveRef = useRef(0)
   const boostRef = useRef(0)
+  /** Motorcycle wheelie timeline (seconds elapsed); <0 = inactive */
+  const wheelieTRef = useRef(-1)
+  const wheelieAngleRef = useRef(0)
   const oilSpinRef = useRef(0)
   const oilAngleRef = useRef(0)
   const waterLatRef = useRef(0)
@@ -290,9 +291,9 @@ export function Vehicle({
 
   const baseSpeed = VEHICLE_META[vehicleId].speed
   const carRadius =
-    vehicleId === 'semi' || vehicleId === 'ambulance'
-      ? 1.15
-      : vehicleId === 'suv'
+    vehicleId === 'truck' || vehicleId === 'ambulance'
+      ? 1.1
+      : vehicleId === 'suv' || vehicleId === 'van'
         ? 0.95
         : vehicleId === 'motorcycle'
           ? 0.45
@@ -335,7 +336,17 @@ export function Vehicle({
       const dist = lookAhead.distanceTo(d.position)
       const reach = d.kind === 'boost' ? 2.6 : d.kind === 'oil' ? 2.2 : 2.0
       if (dist < reach * d.scale) {
-        if (d.kind === 'boost') boostRef.current = Math.max(boostRef.current, 1.4)
+        if (d.kind === 'boost') {
+          // Fresh boost pad hit → motorcycle pops a wheelie
+          if (
+            vehicleId === 'motorcycle' &&
+            boostRef.current < 0.2 &&
+            wheelieTRef.current < 0
+          ) {
+            wheelieTRef.current = 0
+          }
+          boostRef.current = Math.max(boostRef.current, 1.4)
+        }
         if (d.kind === 'oil') {
           onOil = true
           oilSpinRef.current = Math.max(oilSpinRef.current, 1.45)
@@ -345,6 +356,41 @@ export function Vehicle({
         }
       }
     }
+
+    // Motorcycle-only wheelie: 2s, nose up 30°, rear stays planted
+    const WHEELIE_DUR = 2
+    const WHEELIE_MAX = Math.PI / 6 // 30°
+    let wheelieAngle = 0
+    if (vehicleId === 'motorcycle' && wheelieTRef.current >= 0) {
+      wheelieTRef.current += delta
+      const u = Math.min(1, wheelieTRef.current / WHEELIE_DUR)
+      // Rise with the boost (~0.45s), hold, then settle (~0.55s)
+      const riseEnd = 0.22
+      const fallStart = 0.68
+      let env = 1
+      if (u < riseEnd) {
+        const t = u / riseEnd
+        env = t * t * (3 - 2 * t)
+      } else if (u > fallStart) {
+        const t = (u - fallStart) / (1 - fallStart)
+        const s = t * t * (3 - 2 * t)
+        env = 1 - s
+      }
+      wheelieAngle = WHEELIE_MAX * env
+      if (wheelieTRef.current >= WHEELIE_DUR) {
+        wheelieTRef.current = -1
+        wheelieAngle = 0
+      }
+    } else if (vehicleId !== 'motorcycle') {
+      wheelieTRef.current = -1
+    }
+    wheelieAngleRef.current = THREE.MathUtils.damp(
+      wheelieAngleRef.current,
+      wheelieAngle,
+      14,
+      delta,
+    )
+    const wheelie = wheelieAngleRef.current
 
     // Water: sideways slide + small skid angle (not oil-style full rotations)
     if (onWater && waterCooldownRef.current <= 0) {
@@ -583,6 +629,11 @@ export function Vehicle({
     // Slight lift on steep ramps so the body clears the asphalt
     targetPos.y =
       y + 0.05 + Math.abs(Math.sin(smoothPitchRef.current)) * 0.12
+    // Wheelie pivots around rear contact — lift so the back tire stays planted
+    if (wheelie > 0.001) {
+      const rearLever = 0.55
+      targetPos.y += rearLever * Math.sin(wheelie)
+    }
 
     if (!motionReadyRef.current) {
       smoothPosRef.current.copy(targetPos)
@@ -644,6 +695,10 @@ export function Vehicle({
     dummy.lookAt(lookTarget)
     // Pitch onto the road / jump — smooth & seamless with the ramp
     dummy.rotateX(-smoothPitchRef.current)
+    // Motorcycle wheelie: nose up (front tire elevates), rear stays down
+    if (wheelie > 0.001) {
+      dummy.rotateX(wheelie)
+    }
 
     dummy.rotateY(
       hitSpinRef.current * 0.035 + oilAngleRef.current + waterYawRef.current,
