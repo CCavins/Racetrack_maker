@@ -354,6 +354,8 @@ export function Vehicle({
   const lateralOutRef = useRef(startLateral)
   /** Accumulated overspeed drift off the racing line */
   const cornerDriftRef = useRef(0)
+  /** 1 on asphalt → ~0.2 in grass; eases back when you rejoin the road */
+  const grassMulRef = useRef(1)
   /** Seconds before another corner spin-out can fire */
   const spinCooldownRef = useRef(0)
   const finishedRef = useRef(false)
@@ -593,9 +595,9 @@ export function Vehicle({
       THREE.MathUtils.smoothstep(0.012, 0.2, turnFar),
     )
     const turnSigned = tanFlat.x * tanFar.z - tanFlat.z * tanFar.x
-    // Near-straight: no invented "outward" — (turnSigned || 1) used to always jolt +1
+    // Mild bends still wash you wide when carrying too much speed
     const outward =
-      turnFactor < 0.045 ? 0 : Math.sign(turnSigned) || 0
+      turnFactor < 0.02 ? 0 : Math.sign(turnSigned) || 0
 
     let obstacleThreat = 0
     if (canMove) {
@@ -629,7 +631,10 @@ export function Vehicle({
     const onBoost = boostRef.current > 0.05
 
     const excess = Math.max(0, throttleDesired - maxSafe)
-    const capped = Math.min(throttleDesired, maxSafe) + boostExtra
+    // Soft carry: some overspeed stays on the ribbon so you feel the wash-out
+    const carried = excess > 0 ? excess / (1 + excess * 5.5) : 0
+    const capped =
+      Math.min(throttleDesired, maxSafe) + carried + boostExtra
     const underControl =
       canMove &&
       excess < 0.002 &&
@@ -641,7 +646,7 @@ export function Vehicle({
     // Boost pads do not fill this (they shove you along the ribbon)
     if (canMove && excess > 0 && !onBoost) {
       deslotRef.current +=
-        excess * (0.55 + turnFactor * 1.4) * delta * 60 * 0.55
+        excess * (0.65 + turnFactor * 1.6) * delta * 60 * 0.55
     } else if (canMove) {
       deslotRef.current = Math.max(0, deslotRef.current - delta * 1.1)
     } else {
@@ -780,6 +785,7 @@ export function Vehicle({
       avoidLatRef.current = startLateral
       cornerDriftRef.current = 0
       deslotRef.current = 0
+      grassMulRef.current = 1
       peerSlowRef.current = 0
       passSideRef.current = 0
       oilSpinRef.current = 0
@@ -813,7 +819,8 @@ export function Vehicle({
       )
     } else if (overspeeding || deslotRef.current > 0.2) {
       const dump =
-        excess * (2.8 + 6 * excess) + deslotRef.current * 1.8
+        excess * (3.4 + 7 * excess) * (0.55 + turnFactor) +
+        deslotRef.current * 2.1
       cornerDriftRef.current += outward * dump * delta * 60
     } else if (canMove && oilSpinRef.current <= 0) {
       cornerDriftRef.current = THREE.MathUtils.damp(
@@ -855,14 +862,31 @@ export function Vehicle({
       lateralLimit - 0.15,
     )
 
-    const absLatNow = Math.abs(
-      avoidLatRef.current + cornerDriftRef.current,
-    )
+    const latNow = avoidLatRef.current + cornerDriftRef.current
+    const absLatNow = Math.abs(latNow)
     const onGrass = absLatNow > asphaltHalf
 
-    // Hard ceiling on ribbon speed; grass still hurts
+    // In the grass: crawl, and ease back toward the road edge so you can rejoin
+    if (onGrass && canMove && oilSpinRef.current <= 0) {
+      const edge =
+        Math.sign(latNow || outward || 1) * asphaltHalf * 0.9
+      const pull = (edge - latNow) * (1 - Math.exp(-1.6 * delta))
+      cornerDriftRef.current += pull
+    }
+
+    const grassTarget = onGrass ? 0.18 : 1
+    // Bite hard off-road; ramp speed back after you catch asphalt again
+    const grassRate = onGrass ? 10 : 2.8
+    grassMulRef.current = THREE.MathUtils.damp(
+      grassMulRef.current,
+      grassTarget,
+      grassRate,
+      delta,
+    )
+    if (!canMove) grassMulRef.current = 1
+
     const ribbonSpeed = canMove ? capped : 0
-    const speedMul = onGrass ? 0.22 : 1
+    const speedMul = grassMulRef.current
     const dt =
       ((reverseDirection ? -1 : 1) * ribbonSpeed * speedMul * delta * 60) /
       len
