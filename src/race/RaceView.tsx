@@ -587,7 +587,7 @@ export function RaceView() {
     <div className="race-view" ref={wrapRef}>
       <div className="race-canvas-host" ref={canvasHostRef}>
         <Canvas
-          shadows
+          shadows={{ type: THREE.PCFShadowMap }}
           // Keep R3F pointer events on the canvas host only — otherwise they
           // swallow clicks on HUD / MIDI / results overlays in this same parent.
           eventSource={canvasHostRef}
