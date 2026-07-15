@@ -329,6 +329,8 @@ export function Vehicle({
   const lateralOutRef = useRef(startLateral)
   /** Accumulated overspeed drift off the racing line */
   const cornerDriftRef = useRef(0)
+  /** Seconds before another corner spin-out can fire */
+  const spinCooldownRef = useRef(0)
   const defaultSpeed01Ref = useRef(0.5)
   const speedRef = speed01Ref ?? defaultSpeed01Ref
 
@@ -635,12 +637,16 @@ export function Vehicle({
       delta,
     )
 
+    if (spinCooldownRef.current > 0) {
+      spinCooldownRef.current = Math.max(0, spinCooldownRef.current - delta)
+    }
+
     const onOilSpin = oilSpinRef.current > 0
 
     // Shared MIDI / slider pace — equal capability across vehicle models
     const baseSpeed = speed01ToBase(speedRef.current)
 
-    // Curvature sample for grip limit
+    // Curvature from nearby tangents (|cross| ≈ turn angle over ~1.6% of lap)
     const tA = (tNow - 0.008 + 1) % 1
     const tB = (tNow + 0.008) % 1
     const tanA = curve.getTangentAt(tA).clone()
@@ -649,10 +655,9 @@ export function Vehicle({
     tanB.y = 0
     if (tanA.lengthSq() > 1e-8) tanA.normalize()
     if (tanB.lengthSq() > 1e-8) tanB.normalize()
-    const turnSigned = tanA.x * tanB.z - tanA.z * tanB.x // 2D cross Y
+    const turnSigned = tanA.x * tanB.z - tanA.z * tanB.x
     const curvature = Math.abs(turnSigned)
 
-    // Pre-estimate effective speed for grip (boost/oil/peer applied next)
     const provisionalMul =
       (1 + boostRef.current * 0.85) *
       (hitSlowRef.current > 0 ? 0.78 : 1) *
@@ -660,36 +665,48 @@ export function Vehicle({
       (1 - peerSlowRef.current)
     const provisionalSpeed = baseSpeed * provisionalMul
 
-    // Mid-pack (~0.12) holds typical corners; high MIDI + tight turn → drift
-    const GRIP = 0.00135
-    const limit = GRIP / Math.max(curvature, 0.00015)
+    // Scale matches tangent-cross curvature (~0.05–0.6). Mid MIDI (~0.12)
+    // holds typical bends; only very high speed + tight turns drift off.
+    const GRIP = 0.055
+    const limit = GRIP / Math.max(curvature, 0.04)
     const overspeed = Math.max(0, provisionalSpeed - limit)
     const outward = Math.sign(turnSigned || 1) * (reverseDirection ? -1 : 1)
 
-    if (overspeed > 0.002 && curvature > 0.0004) {
-      const push = overspeed * 2.8 * delta * 60
+    if (
+      overspeed > 0.01 &&
+      curvature > 0.06 &&
+      oilSpinRef.current <= 0 &&
+      spinCooldownRef.current <= 0
+    ) {
+      // Soft drift onto / past asphalt — not an instant spin
+      const push = overspeed * 1.1 * delta * 60
       cornerDriftRef.current += outward * push
-      // Extreme: far off or huge overspeed while turning → oil-style spin
-      const farOff = Math.abs(lateralOutRef.current) > ASPHALT_HALF + 0.55
-      const wild = overspeed / Math.max(limit, 0.01) > 1.35 && curvature > 0.001
-      if ((farOff || wild) && oilSpinRef.current <= 0) {
-        oilSpinRef.current = Math.max(oilSpinRef.current, 1.45)
-      }
-    } else {
-      // Bleed drift back toward center when under control
+    } else if (oilSpinRef.current <= 0) {
       cornerDriftRef.current = THREE.MathUtils.damp(
         cornerDriftRef.current,
         0,
-        recovering ? 2.8 : 1.6,
+        recovering ? 3.2 : 2.0,
         delta,
       )
     }
-    // While spinning, stop piling on more drift and ease back
+
+    // Spin only once you're actually off the asphalt (or deep into grass)
+    const farOff = Math.abs(lateralOutRef.current) > ASPHALT_HALF + 0.45
+    if (
+      farOff &&
+      oilSpinRef.current <= 0 &&
+      spinCooldownRef.current <= 0 &&
+      overspeed > 0.02
+    ) {
+      oilSpinRef.current = 1.45
+      spinCooldownRef.current = 2.8
+    }
+
     if (oilSpinRef.current > 0) {
       cornerDriftRef.current = THREE.MathUtils.damp(
         cornerDriftRef.current,
         0,
-        1.8,
+        2.4,
         delta,
       )
     }
