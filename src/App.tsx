@@ -4,11 +4,14 @@ import { RaceView } from './race/RaceView'
 import './styles/app.css'
 
 function GeneratingOverlay() {
+  const { loadStatus } = useTrackStore()
   return (
     <div className="generating-overlay">
       <div className="generating-card">
         <p className="generating-title">Building track</p>
-        <p className="generating-sub">Extruding asphalt · planting chaos · warming engines</p>
+        <p className="generating-sub">
+          {loadStatus ?? 'Extruding asphalt · planting chaos · warming engines'}
+        </p>
         <div className="generating-bar">
           <span />
         </div>

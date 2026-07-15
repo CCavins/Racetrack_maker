@@ -87,6 +87,8 @@ type TrackStore = {
   recordLapTime: (ms: number) => void
   clearAll: (width?: number, height?: number) => void
   canGenerate: boolean
+  loadStatus: string | null
+  setLoadStatus: (s: string | null) => void
 }
 
 const Ctx = createContext<TrackStore | null>(null)
@@ -420,6 +422,7 @@ export function TrackProvider({ children }: { children: ReactNode }) {
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(
     null,
   )
+  const [loadStatus, setLoadStatus] = useState<string | null>(null)
 
   useEffect(() => {
     savePersisted(design, step, canvasSize, bestLapMs)
@@ -704,6 +707,8 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       recordLapTime,
       clearAll,
       canGenerate,
+      loadStatus,
+      setLoadStatus,
     }),
     [
       step,
@@ -734,6 +739,7 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       recordLapTime,
       clearAll,
       canGenerate,
+      loadStatus,
     ],
   )
 

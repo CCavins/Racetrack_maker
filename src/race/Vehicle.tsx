@@ -1,17 +1,33 @@
-import { Suspense, useMemo, useRef, type MutableRefObject } from 'react'
+import {
+  Component,
+  useMemo,
+  useRef,
+  type MutableRefObject,
+  type ReactNode,
+} from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import type { Track3D } from '../lib/buildTrack3D'
 import { VEHICLE_META, type VehicleId, type VehicleLookMode } from '../types'
 import { recolorBodyMaterials } from '../lib/vehicleStyle'
-import { Component, type ReactNode } from 'react'
 
 const VEHICLE_URLS: Record<VehicleId, string> = {
   sports: `${import.meta.env.BASE_URL}assets/vehicles/sports.glb`,
   motorcycle: `${import.meta.env.BASE_URL}assets/vehicles/motorcycle.glb`,
   semi: `${import.meta.env.BASE_URL}assets/vehicles/semi.glb`,
   minivan: `${import.meta.env.BASE_URL}assets/vehicles/minivan.glb`,
+  race: `${import.meta.env.BASE_URL}assets/vehicles/race.glb`,
+  sedan: `${import.meta.env.BASE_URL}assets/vehicles/sedan.glb`,
+  taxi: `${import.meta.env.BASE_URL}assets/vehicles/taxi.glb`,
+  police: `${import.meta.env.BASE_URL}assets/vehicles/police.glb`,
+  suv: `${import.meta.env.BASE_URL}assets/vehicles/suv.glb`,
+  ambulance: `${import.meta.env.BASE_URL}assets/vehicles/ambulance.glb`,
+  hatchback: `${import.meta.env.BASE_URL}assets/vehicles/hatchback.glb`,
+  future: `${import.meta.env.BASE_URL}assets/vehicles/future.glb`,
+  hovercar: `${import.meta.env.BASE_URL}assets/vehicles/hovercar.glb`,
+  cruiser: `${import.meta.env.BASE_URL}assets/vehicles/cruiser.glb`,
+  muscle: `${import.meta.env.BASE_URL}assets/vehicles/muscle.glb`,
 }
 
 const AVAILABLE_VEHICLE_GLBS = new Set<VehicleId>([
@@ -19,6 +35,17 @@ const AVAILABLE_VEHICLE_GLBS = new Set<VehicleId>([
   'motorcycle',
   'semi',
   'minivan',
+  'race',
+  'sedan',
+  'taxi',
+  'police',
+  'suv',
+  'ambulance',
+  'hatchback',
+  'future',
+  'hovercar',
+  'cruiser',
+  'muscle',
 ])
 
 function FallbackVehicle({
@@ -132,7 +159,14 @@ function LoadedVehicle({
     const size = new THREE.Vector3()
     box.getSize(size)
     const maxDim = Math.max(size.x, size.y, size.z) || 1
-    const target = id === 'semi' ? 3.2 : id === 'motorcycle' ? 1.6 : 2.2
+    const target =
+      id === 'semi' || id === 'ambulance'
+        ? 3.2
+        : id === 'suv'
+          ? 2.6
+          : id === 'motorcycle'
+            ? 1.6
+            : 2.2
     c.scale.multiplyScalar(target / maxDim)
 
     // Recompute bounds after scale
@@ -193,6 +227,8 @@ type Props = {
   chaseDistance: number
   chaseOrbit: number
   showBeacon: boolean
+  /** When false, hold still until assets / scene are ready */
+  running?: boolean
   stateRef: MutableRefObject<VehicleState>
   onLap?: (lap: number) => void
 }
@@ -208,6 +244,7 @@ export function Vehicle({
   chaseDistance,
   chaseOrbit,
   showBeacon,
+  running = true,
   stateRef,
   onLap,
 }: Props) {
@@ -253,7 +290,13 @@ export function Vehicle({
 
   const baseSpeed = VEHICLE_META[vehicleId].speed
   const carRadius =
-    vehicleId === 'semi' ? 1.15 : vehicleId === 'motorcycle' ? 0.45 : 0.75
+    vehicleId === 'semi' || vehicleId === 'ambulance'
+      ? 1.15
+      : vehicleId === 'suv'
+        ? 0.95
+        : vehicleId === 'motorcycle'
+          ? 0.45
+          : 0.75
   const url = AVAILABLE_VEHICLE_GLBS.has(vehicleId)
     ? VEHICLE_URLS[vehicleId]
     : null
@@ -267,6 +310,7 @@ export function Vehicle({
   )
 
   useFrame((state, rawDelta) => {
+    if (!running) return
     const delta = Math.min(rawDelta, 1 / 28)
     const curve = track.curve
     const len = Math.max(track.length, 1)
@@ -661,15 +705,13 @@ export function Vehicle({
     <group ref={groupRef}>
       {url ? (
         <ErrBoundary fallback={fallback}>
-          <Suspense fallback={fallback}>
-            <LoadedVehicle
-              url={url}
-              id={vehicleId}
-              color={vehicleColor}
-              wrapMap={wrapMap}
-              look={vehicleLook}
-            />
-          </Suspense>
+          <LoadedVehicle
+            url={url}
+            id={vehicleId}
+            color={vehicleColor}
+            wrapMap={wrapMap}
+            look={vehicleLook}
+          />
         </ErrBoundary>
       ) : (
         fallback

@@ -12,7 +12,22 @@ export type StickerType =
   | 'billboard'
   | 'water'
 
-export type VehicleId = 'sports' | 'motorcycle' | 'semi' | 'minivan'
+export type VehicleId =
+  | 'sports'
+  | 'motorcycle'
+  | 'semi'
+  | 'minivan'
+  | 'race'
+  | 'sedan'
+  | 'taxi'
+  | 'police'
+  | 'suv'
+  | 'ambulance'
+  | 'hatchback'
+  | 'future'
+  | 'hovercar'
+  | 'cruiser'
+  | 'muscle'
 
 export type Sticker = {
   id: string
@@ -82,6 +97,17 @@ export const VEHICLE_META: Record<
   motorcycle: { label: 'Motorcycle', speed: 0.16, color: '#457b9d' },
   semi: { label: 'Semi Truck', speed: 0.07, color: '#2a9d8f' },
   minivan: { label: 'Minivan', speed: 0.09, color: '#e9c46a' },
+  race: { label: 'Race Car', speed: 0.15, color: '#ef233c' },
+  sedan: { label: 'Sedan', speed: 0.11, color: '#4cc9f0' },
+  taxi: { label: 'Taxi', speed: 0.1, color: '#ffd60a' },
+  police: { label: 'Police', speed: 0.13, color: '#118ab2' },
+  suv: { label: 'SUV', speed: 0.1, color: '#6d597a' },
+  ambulance: { label: 'Ambulance', speed: 0.09, color: '#f8f9fa' },
+  hatchback: { label: 'Hatchback', speed: 0.12, color: '#06d6a0' },
+  future: { label: 'Future Racer', speed: 0.14, color: '#7b2cbf' },
+  hovercar: { label: 'Hovercar', speed: 0.14, color: '#90e0ef' },
+  cruiser: { label: 'Cop Cruiser', speed: 0.11, color: '#1d3557' },
+  muscle: { label: 'Muscle Car', speed: 0.13, color: '#e85d04' },
 }
 
 export const STICKER_TYPES = Object.keys(STICKER_META) as StickerType[]

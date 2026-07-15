@@ -1,0 +1,22 @@
+Sketchfab vehicle models used in Circuit Sketch
+==============================================
+
+1. (FREE) Merc Hovercar
+   Author: Lionsharp Studios
+   URL: https://sketchfab.com/3d-models/free-merc-hovercar-oFfjKlslHqXgtKdKqEtpffmSv6h
+   License: CC Attribution-ShareAlike
+   Local id: hovercar
+
+2. Fairheaven LT '80 Cop Cruiser - Low poly model
+   Author: Daniel Zhabotinsky
+   URL: https://sketchfab.com/3d-models/fairheaven-lt-80-cop-cruiser-low-poly-model-61766c1e6e1e4b2b803c174f33433a74
+   License: CC Attribution
+   Local id: cruiser
+
+3. Phoenix 455 '71 - Low poly model
+   Author: Daniel Zhabotinsky
+   URL: https://sketchfab.com/3d-models/phoenix-455-71-low-poly-model-955edc733c6d44fabc0ad7c246a15896
+   License: CC Attribution
+   Local id: muscle
+
+Models were compressed (Draco + WebP) for web delivery; originals remain © their authors under the licenses above.

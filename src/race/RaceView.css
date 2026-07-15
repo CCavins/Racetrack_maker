@@ -12,6 +12,11 @@
   cursor: grabbing;
 }
 
+.race-loading-overlay {
+  z-index: 20;
+  animation: none;
+}
+
 @keyframes race-in {
   from {
     opacity: 0;

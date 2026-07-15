@@ -1,4 +1,4 @@
-import { Component, Suspense, useMemo, useRef, type ReactNode } from 'react'
+import { Component, useMemo, useRef, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
@@ -148,9 +148,7 @@ function PropItem({ prop }: { prop: PropPlacement }) {
     >
       {url ? (
         <GlbErrorBoundary fallback={fallback}>
-          <Suspense fallback={fallback}>
-            <LoadedGlb url={url} scale={prop.scale} />
-          </Suspense>
+          <LoadedGlb url={url} scale={prop.scale} />
         </GlbErrorBoundary>
       ) : (
         fallback

@@ -65,7 +65,11 @@ GITHUB_PAGES=true npm run build
 
 ### Assets
 - Stickers (PNG) and vehicles / props (GLB) live under `public/assets/`
-- Many assets were generated with [Higgsfield](https://higgsfield.ai/); the race view falls back to procedural meshes if a GLB fails to load
+- Many original assets were generated with [Higgsfield](https://higgsfield.ai/); the race view falls back to procedural meshes if a GLB fails to load
+- Extra cars (race, sedan, taxi, police, SUV, ambulance, hatchback, future) are from [Kenney Car Kit](https://kenney.nl/assets/car-kit) (CC0) — see `public/assets/vehicles/KENNEY_LICENSE.txt`
+- Sketchfab cars (hovercar, cruiser, muscle) — see `public/assets/vehicles/SKETCHFAB_ATTRIBUTION.txt` for authors and CC licenses
+
+> **Note:** Sketchfab downloads require a logged-in account. Additional models can be dropped into `public/assets/vehicles/` and wired the same way.
 
 ### Repo
 - [github.com/CCavins/Racetrack_maker](https://github.com/CCavins/Racetrack_maker)

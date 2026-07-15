@@ -3,6 +3,7 @@ import { useTrackStore } from '../state/trackStore'
 import { TrackCanvas } from './TrackCanvas'
 import { StickerPalette } from './StickerPalette'
 import { VehiclePicker } from './VehiclePicker'
+import { preloadRaceAssets } from '../lib/preloadRaceAssets'
 import './EditorShell.css'
 
 export function EditorShell() {
@@ -23,12 +24,26 @@ export function EditorShell() {
     toggleReverseDirection,
     exportDesignJson,
     importDesignJson,
+    setLoadStatus,
   } = useTrackStore()
 
-  const generate = () => {
+  const generate = async () => {
     if (!canGenerate) return
     setStep('generating')
-    window.setTimeout(() => setStep('race'), 900)
+    setLoadStatus('Loading vehicles & props…')
+    try {
+      await preloadRaceAssets(design, (label) => setLoadStatus(label))
+      setLoadStatus('Starting race…')
+      await new Promise((r) => window.setTimeout(r, 80))
+      setStep('race')
+    } catch (err) {
+      console.error(err)
+      setLoadStatus('Some assets failed — starting with fallbacks…')
+      await new Promise((r) => window.setTimeout(r, 350))
+      setStep('race')
+    } finally {
+      setLoadStatus(null)
+    }
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {

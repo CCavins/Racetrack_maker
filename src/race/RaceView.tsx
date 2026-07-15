@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Sky, ContactShadows } from '@react-three/drei'
 import * as THREE from 'three'
@@ -10,18 +10,36 @@ import { PropInstances } from './PropInstances'
 import { Vehicle, type VehicleState } from './Vehicle'
 import './RaceView.css'
 
+function SceneReady({ onReady }: { onReady: () => void }) {
+  useEffect(() => {
+    let id2 = 0
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => onReady())
+    })
+    return () => {
+      cancelAnimationFrame(id1)
+      cancelAnimationFrame(id2)
+    }
+  }, [onReady])
+  return null
+}
+
 function SceneContent({
   chaseCam,
   chaseDistance,
   chaseOrbit,
   onLap,
   stateRef,
+  running,
+  onReady,
 }: {
   chaseCam: boolean
   chaseDistance: number
   chaseOrbit: number
   onLap: (n: number) => void
   stateRef: React.MutableRefObject<VehicleState>
+  running: boolean
+  onReady: () => void
 }) {
   const { design } = useTrackStore()
   const track = useMemo(() => buildTrack3D(design), [design])
@@ -42,10 +60,8 @@ function SceneContent({
     <>
       <color attach="background" args={['#87a0b0']} />
       <fog attach="fog" args={['#9eb0bc', 50, 130]} />
-      {/* Soft fill so backsides / wraps stay readable */}
       <ambientLight intensity={0.92} />
       <hemisphereLight args={['#f0f4f8', '#6a7a5c', 1.05]} />
-      {/* Bright key sun */}
       <directionalLight
         castShadow
         position={[35, 48, 22]}
@@ -58,7 +74,6 @@ function SceneContent({
         shadow-camera-bottom={-40}
         shadow-bias={-0.0002}
       />
-      {/* Opposite fill so the shadowed flank isn't black */}
       <directionalLight position={[-28, 22, -18]} intensity={0.55} color="#c8daf0" />
       <directionalLight position={[8, 14, -30]} intensity={0.35} color="#ffe8d0" />
       <Sky sunPosition={[100, 40, 40]} turbidity={4} rayleigh={1.2} />
@@ -85,6 +100,7 @@ function SceneContent({
         chaseDistance={chaseDistance}
         chaseOrbit={chaseOrbit}
         showBeacon={!chaseCam}
+        running={running}
         stateRef={stateRef}
         onLap={onLap}
       />
@@ -108,6 +124,7 @@ function SceneContent({
       )}
 
       {!chaseCam && <CarScreenProjector stateRef={stateRef} />}
+      <SceneReady onReady={onReady} />
     </>
   )
 }
@@ -213,12 +230,14 @@ function CarEdgeHint({ active }: { active: boolean }) {
 }
 
 export function RaceView() {
-  const { design, setStep, bestLapMs, recordLapTime } = useTrackStore()
+  const { design, setStep, bestLapMs, recordLapTime, setLoadStatus } =
+    useTrackStore()
   const [chaseCam, setChaseCam] = useState(true)
   const [chaseDistance, setChaseDistance] = useState(8)
   const [chaseOrbit, setChaseOrbit] = useState(0)
   const [lap, setLap] = useState(0)
   const [lastLapMs, setLastLapMs] = useState<number | null>(null)
+  const [sceneReady, setSceneReady] = useState(false)
   const lapStartRef = useRef(performance.now())
   const dragRef = useRef<{ x: number; orbit: number } | null>(null)
   const chaseOrbitRef = useRef(0)
@@ -234,6 +253,12 @@ export function RaceView() {
     ? VEHICLE_META[design.vehicle].label
     : 'Vehicle'
 
+  const markReady = useCallback(() => {
+    setSceneReady(true)
+    setLoadStatus(null)
+    lapStartRef.current = performance.now()
+  }, [setLoadStatus])
+
   const onLap = (n: number) => {
     const now = performance.now()
     const ms = now - lapStartRef.current
@@ -244,6 +269,10 @@ export function RaceView() {
     }
     setLap(n)
   }
+
+  useEffect(() => {
+    if (!sceneReady) setLoadStatus('Rendering scene…')
+  }, [sceneReady, setLoadStatus])
 
   useEffect(() => {
     lapStartRef.current = performance.now()
@@ -305,16 +334,34 @@ export function RaceView() {
         camera={{ position: [12, 14, 18], fov: 50, near: 0.1, far: 200 }}
         dpr={[1, 1.75]}
       >
-        <SceneContent
-          chaseCam={chaseCam}
-          chaseDistance={chaseDistance}
-          chaseOrbit={chaseOrbit}
-          onLap={onLap}
-          stateRef={stateRef}
-        />
+        <Suspense fallback={null}>
+          <SceneContent
+            chaseCam={chaseCam}
+            chaseDistance={chaseDistance}
+            chaseOrbit={chaseOrbit}
+            onLap={onLap}
+            stateRef={stateRef}
+            running={sceneReady}
+            onReady={markReady}
+          />
+        </Suspense>
       </Canvas>
 
-      <CarEdgeHint active={!chaseCam} />
+      {!sceneReady && (
+        <div className="generating-overlay race-loading-overlay">
+          <div className="generating-card">
+            <p className="generating-title">Loading scene</p>
+            <p className="generating-sub">
+              Waiting for vehicles, props, and textures…
+            </p>
+            <div className="generating-bar">
+              <span />
+            </div>
+          </div>
+        </div>
+      )}
+
+      <CarEdgeHint active={!chaseCam && sceneReady} />
 
       <div className="race-hud">
         <div className="hud-left">
