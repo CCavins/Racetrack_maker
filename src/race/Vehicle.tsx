@@ -238,6 +238,7 @@ export function Vehicle({
   const smoothTanRef = useRef(new THREE.Vector3(0, 0, 1))
   const smoothPosRef = useRef(new THREE.Vector3())
   const smoothQuatRef = useRef(new THREE.Quaternion())
+  const smoothPitchRef = useRef(0)
   const motionReadyRef = useRef(false)
 
   const wrapMap = useMemo(() => {
@@ -502,8 +503,42 @@ export function Vehicle({
 
     prevSlopeRef.current = slope
 
+    // Pitch from the real 3D path (horizontal tangent still used for steering)
+    const rawTan = curve.getTangentAt(t).clone()
+    if (reverseDirection) rawTan.negate()
+    const horiz = Math.hypot(rawTan.x, rawTan.z)
+    let desiredPitch = Math.atan2(rawTan.y, Math.max(horiz, 1e-6))
+
+    const tPitch = (t + (reverseDirection ? -0.014 : 0.014) + 1) % 1
+    const rawTanLook = curve.getTangentAt(tPitch).clone()
+    if (reverseDirection) rawTanLook.negate()
+    const horizLook = Math.hypot(rawTanLook.x, rawTanLook.z)
+    const pitchLook = Math.atan2(rawTanLook.y, Math.max(horizLook, 1e-6))
+    desiredPitch = THREE.MathUtils.lerp(desiredPitch, pitchLook, 0.45)
+
+    if (wasAirborne.current) {
+      // Follow the loft a bit so the nose rises/falls in the air
+      const airPitch =
+        Math.atan2(airVelRef.current, Math.max(baseSpeed * 45, 5)) * 0.8
+      desiredPitch = THREE.MathUtils.lerp(desiredPitch, airPitch, 0.7)
+    }
+    desiredPitch = THREE.MathUtils.clamp(desiredPitch, -0.9, 0.9)
+
+    if (!motionReadyRef.current) {
+      smoothPitchRef.current = desiredPitch
+    } else {
+      smoothPitchRef.current = THREE.MathUtils.damp(
+        smoothPitchRef.current,
+        desiredPitch,
+        11,
+        delta,
+      )
+    }
+
     const targetPos = pos.clone().addScaledVector(side, clampedLateral)
-    targetPos.y = y + 0.05
+    // Slight lift on steep ramps so the body clears the asphalt
+    targetPos.y =
+      y + 0.05 + Math.abs(Math.sin(smoothPitchRef.current)) * 0.12
 
     if (!motionReadyRef.current) {
       smoothPosRef.current.copy(targetPos)
@@ -557,14 +592,15 @@ export function Vehicle({
     }
 
     const lookTarget = finalPos.clone().add(tangent)
-    // Keep look target level so the car stays flat on the road (no roll)
+    // Level look target keeps yaw upright (no bank/roll on turns)
     lookTarget.y = finalPos.y
     const dummy = new THREE.Object3D()
     dummy.position.copy(finalPos)
     dummy.up.set(0, 1, 0)
     dummy.lookAt(lookTarget)
+    // Pitch onto the road / jump — smooth & seamless with the ramp
+    dummy.rotateX(-smoothPitchRef.current)
 
-    if (wasAirborne.current) dummy.rotateX(-0.2)
     dummy.rotateY(
       hitSpinRef.current * 0.035 + oilAngleRef.current + waterYawRef.current,
     )
