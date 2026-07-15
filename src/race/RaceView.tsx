@@ -518,19 +518,32 @@ export function RaceView() {
     lapStartRef.current = performance.now()
   }, [])
 
+  const raceComplete =
+    racers.length > 0 && finishOrder.length >= racers.length
+
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       if (!chaseCam) return
+      // Don't zoom while overlays steal focus
+      if (midiOpen || raceComplete) return
+      const t = e.target as HTMLElement
+      if (t.closest('.midi-panel-backdrop, .race-results, .race-hud')) return
       e.preventDefault()
       setChaseDistance((d) =>
         Math.min(22, Math.max(3.5, d + e.deltaY * 0.012)),
       )
     }
+    const uiBlocked = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return true
+      // Only orbit/peek from the WebGL canvas — never from HUD/overlays
+      if (target.closest('canvas')) return false
+      return true
+    }
     const onPointerDown = (e: PointerEvent) => {
-      if (!chaseCam) return
-      if ((e.target as HTMLElement).closest('.race-hud')) return
+      if (!chaseCam || midiOpen || raceComplete) return
+      if (uiBlocked(e.target)) return
       dragRef.current = { x: e.clientX, orbit: chaseOrbitRef.current }
       el.setPointerCapture(e.pointerId)
     }
@@ -559,7 +572,7 @@ export function RaceView() {
       el.removeEventListener('pointerup', onPointerUp)
       el.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [chaseCam])
+  }, [chaseCam, midiOpen, raceComplete])
 
   const fmt = (ms: number) => {
     const s = ms / 1000
@@ -572,8 +585,6 @@ export function RaceView() {
       : 'Vehicle'
   const chasePlace =
     board.find((r) => r.index === chaseIndex)?.place ?? null
-  const raceComplete =
-    racers.length > 0 && finishOrder.length >= racers.length
   const fmtRace = (ms: number) => {
     const s = ms / 1000
     return s >= 60
@@ -634,7 +645,12 @@ export function RaceView() {
       )}
 
       {raceComplete && (
-        <div className="race-results" role="dialog" aria-label="Race results">
+        <div
+          className="race-results"
+          role="dialog"
+          aria-label="Race results"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           <div className="race-results-card">
             <p className="race-results-kicker">Final standings</p>
             <h2 className="race-results-title">Leaderboard</h2>

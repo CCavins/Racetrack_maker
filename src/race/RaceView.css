@@ -31,6 +31,7 @@
 .race-hud {
   position: absolute;
   inset: 0;
+  z-index: 15;
   pointer-events: none;
   display: flex;
   justify-content: space-between;

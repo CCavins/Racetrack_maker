@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useMidiControl } from '../midi/midiControlStore'
 import { formatBinding, MIDI_SLOT_COUNT } from '../midi/midiTypes'
 import { VEHICLE_META, type VehicleId } from '../types'
@@ -24,6 +25,18 @@ export function MidiSettingsPanel({ open, onClose, racers }: Props) {
     cancelLearn,
   } = useMidiControl()
 
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      // Learning uses Esc to cancel map — don't also close the panel
+      if (learnSlot !== null) return
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose, learnSlot])
+
   if (!open) return null
 
   const statusLine = midiError
@@ -35,12 +48,18 @@ export function MidiSettingsPanel({ open, onClose, racers }: Props) {
         : 'Connecting MIDI…'
 
   return (
-    <div className="midi-panel-backdrop" role="presentation" onClick={onClose}>
+    <div
+      className="midi-panel-backdrop"
+      role="presentation"
+      onClick={onClose}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       <div
         className="midi-panel"
         role="dialog"
         aria-label="MIDI and race speeds"
         onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="midi-panel-head">
           <h2 className="midi-panel-title">MIDI / Speeds</h2>
