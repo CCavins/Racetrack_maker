@@ -329,6 +329,8 @@ export function RaceView() {
   const [chaseIndex, setChaseIndex] = useState(0)
   const [showBeacons, setShowBeacons] = useState(true)
   const [midiOpen, setMidiOpen] = useState(false)
+  const closeMidi = useCallback(() => setMidiOpen(false), [])
+  const toggleMidi = useCallback(() => setMidiOpen((v) => !v), [])
   const [board, setBoard] = useState<BoardRow[]>([])
   const [lastLapMs, setLastLapMs] = useState<number | null>(null)
   const [sceneReady, setSceneReady] = useState(false)
@@ -809,7 +811,7 @@ export function RaceView() {
             type="button"
             data-midi-toggle
             className={`hud-btn ${midiOpen ? 'on' : ''}`}
-            onClick={() => setMidiOpen((v) => !v)}
+            onClick={toggleMidi}
             title="MIDI knobs and race speeds"
             aria-expanded={midiOpen}
           >
@@ -845,7 +847,7 @@ export function RaceView() {
 
       <MidiSettingsPanel
         open={midiOpen}
-        onClose={() => setMidiOpen(false)}
+        onClose={closeMidi}
         racers={racers}
       />
     </div>
