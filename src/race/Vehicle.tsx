@@ -249,6 +249,8 @@ type Props = {
   chaseDistance: number
   chaseOrbit: number
   showBeacon: boolean
+  /** Marker / leaderboard color for this racer */
+  beaconColor?: string
   /** When false, hold still until assets / scene are ready */
   running?: boolean
   stateRef: MutableRefObject<VehicleState>
@@ -273,6 +275,7 @@ export function Vehicle({
   chaseDistance,
   chaseOrbit,
   showBeacon,
+  beaconColor = '#e8b923',
   running = true,
   stateRef,
   racerIndex = 0,
@@ -918,21 +921,21 @@ export function Vehicle({
       ) : (
         fallback
       )}
-      {showBeacon && <CarBeacon />}
+      {showBeacon && <CarBeacon color={beaconColor} />}
     </group>
   )
 }
 
 const ROAD_HALF = 1.7
 
-function CarBeacon() {
+function CarBeacon({ color }: { color: string }) {
   return (
     <group position={[0, 0.2, 0]}>
       <mesh position={[0, 3.2, 0]}>
         <cylinderGeometry args={[0.06, 0.06, 5.5, 6]} />
         <meshStandardMaterial
-          color="#e8b923"
-          emissive="#e8b923"
+          color={color}
+          emissive={color}
           emissiveIntensity={0.9}
           transparent
           opacity={0.85}
@@ -941,15 +944,15 @@ function CarBeacon() {
       <mesh position={[0, 6.2, 0]} rotation={[Math.PI, 0, 0]}>
         <coneGeometry args={[0.55, 1.1, 3]} />
         <meshStandardMaterial
-          color="#e8b923"
-          emissive="#ffc933"
-          emissiveIntensity={1.2}
+          color={color}
+          emissive={color}
+          emissiveIntensity={1.15}
         />
       </mesh>
       <mesh position={[0, 6.2, 0]}>
         <ringGeometry args={[0.7, 1.05, 24]} />
         <meshBasicMaterial
-          color="#e8b923"
+          color={color}
           transparent
           opacity={0.55}
           side={THREE.DoubleSide}

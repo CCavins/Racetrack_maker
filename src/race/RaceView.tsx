@@ -13,6 +13,14 @@ import './RaceView.css'
 const START_LATERAL = [-0.12, 0.08, -0.06, 0.1]
 const START_T = [0, 0.014, 0.028, 0.042]
 
+/** Distinct marker colors for up to 4 racers (beacon + leaderboard) */
+export const RACER_MARKER_COLORS = [
+  '#e8b923',
+  '#1a9fff',
+  '#ef233c',
+  '#06d6a0',
+] as const
+
 function emptyState(id: VehicleId): VehicleState {
   return {
     position: new THREE.Vector3(),
@@ -43,6 +51,7 @@ function SceneContent({
   chaseDistance,
   chaseOrbit,
   chaseIndex,
+  showBeacons,
   onLap,
   stateRefs,
   peersRef,
@@ -54,6 +63,7 @@ function SceneContent({
   chaseDistance: number
   chaseOrbit: number
   chaseIndex: number
+  showBeacons: boolean
   onLap: (n: number, vehicleId: VehicleId) => void
   stateRefs: React.MutableRefObject<VehicleState>[]
   peersRef: React.MutableRefObject<PeerSnapshot[]>
@@ -127,7 +137,8 @@ function SceneContent({
             chaseCam={chaseCam && i === chaseIndex}
             chaseDistance={chaseDistance}
             chaseOrbit={chaseOrbit}
-            showBeacon={!chaseCam || i !== chaseIndex}
+            showBeacon={showBeacons}
+            beaconColor={RACER_MARKER_COLORS[i] ?? RACER_MARKER_COLORS[0]}
             running={running}
             stateRef={stateRefs[i]}
             racerIndex={i}
@@ -277,6 +288,7 @@ export function RaceView() {
   const [chaseDistance, setChaseDistance] = useState(8)
   const [chaseOrbit, setChaseOrbit] = useState(0)
   const [chaseIndex, setChaseIndex] = useState(0)
+  const [showBeacons, setShowBeacons] = useState(true)
   const [board, setBoard] = useState<BoardRow[]>([])
   const [lastLapMs, setLastLapMs] = useState<number | null>(null)
   const [sceneReady, setSceneReady] = useState(false)
@@ -449,6 +461,7 @@ export function RaceView() {
             chaseDistance={chaseDistance}
             chaseOrbit={chaseOrbit}
             chaseIndex={chaseIndex}
+            showBeacons={showBeacons}
             onLap={onLap}
             stateRefs={stateRefs}
             peersRef={peersRef}
@@ -484,7 +497,8 @@ export function RaceView() {
             {design.reverseDirection ? ' · CCW' : ' · CW'}
             {chaseCam
               ? ` · Zoom ${chaseDistance.toFixed(0)}m · drag to peek`
-              : ' · Orbit · beacons = cars'}
+              : ' · Orbit'}
+            {showBeacons ? ' · markers on' : ' · markers off'}
           </p>
           <p className="hud-times">
             {lastLapMs !== null ? `Last ${fmt(lastLapMs)}` : 'Last —'}
@@ -493,25 +507,37 @@ export function RaceView() {
           </p>
           {board.length > 1 && (
             <ol className="hud-board">
-              {board.map((row) => (
-                <li
-                  key={`${row.id}-${row.index}`}
-                  className={
-                    row.index === chaseIndex ? 'hud-board-row active' : 'hud-board-row'
-                  }
-                >
-                  <button
-                    type="button"
-                    className="hud-board-btn"
-                    onClick={() => setChaseIndex(row.index)}
-                    title={`Chase ${row.label}`}
+              {board.map((row) => {
+                const marker =
+                  RACER_MARKER_COLORS[row.index] ?? RACER_MARKER_COLORS[0]
+                return (
+                  <li
+                    key={`${row.id}-${row.index}`}
+                    className={
+                      row.index === chaseIndex
+                        ? 'hud-board-row active'
+                        : 'hud-board-row'
+                    }
                   >
-                    <span className="hud-place">P{row.place}</span>
-                    <span className="hud-racer">{row.label}</span>
-                    <span className="hud-lap">L{row.lap + 1}</span>
-                  </button>
-                </li>
-              ))}
+                    <button
+                      type="button"
+                      className="hud-board-btn"
+                      onClick={() => setChaseIndex(row.index)}
+                      title={`Chase ${row.label}`}
+                      style={{ borderLeftColor: marker }}
+                    >
+                      <span
+                        className="hud-marker"
+                        style={{ background: marker }}
+                        aria-hidden
+                      />
+                      <span className="hud-place">P{row.place}</span>
+                      <span className="hud-racer">{row.label}</span>
+                      <span className="hud-lap">L{row.lap + 1}</span>
+                    </button>
+                  </li>
+                )
+              })}
             </ol>
           )}
           {racers.length > 1 && board.length <= 1 && (
@@ -522,7 +548,18 @@ export function RaceView() {
                   type="button"
                   className={`hud-chip ${i === chaseIndex ? 'active' : ''}`}
                   onClick={() => setChaseIndex(i)}
+                  style={{
+                    borderColor:
+                      RACER_MARKER_COLORS[i] ?? RACER_MARKER_COLORS[0],
+                  }}
                 >
+                  <span
+                    className="hud-chip-dot"
+                    style={{
+                      background:
+                        RACER_MARKER_COLORS[i] ?? RACER_MARKER_COLORS[0],
+                    }}
+                  />
                   {VEHICLE_META[id].label}
                 </button>
               ))}
@@ -530,6 +567,14 @@ export function RaceView() {
           )}
         </div>
         <div className="hud-right">
+          <button
+            type="button"
+            className={`hud-btn ${showBeacons ? 'on' : ''}`}
+            onClick={() => setShowBeacons((v) => !v)}
+            title="Toggle racer markers"
+          >
+            {showBeacons ? 'Markers on' : 'Markers off'}
+          </button>
           <button
             type="button"
             className="hud-btn"
