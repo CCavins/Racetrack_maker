@@ -50,9 +50,7 @@ export function MidiSettingsPanel({ open, onClose, racers }: Props) {
         </div>
         <p className="midi-panel-status">{statusLine}</p>
         <p className="midi-panel-hint">
-          Slot-car style: full throw on straights, lift for corners and
-          obstacles — overspeed slides you wide and can spin you out. Esc
-          cancels learn.
+          Lift early for corners; ease back on after a spin. Esc cancels learn.
         </p>
 
         <ul className="midi-slot-list">

@@ -16,7 +16,7 @@ import {
   type VehicleLookMode,
 } from '../types'
 import { recolorBodyMaterials } from '../lib/vehicleStyle'
-import { speed01ToBase } from '../midi/midiTypes'
+import { POWER_GATE_LIFT, speed01ToBase } from '../midi/midiTypes'
 
 const VEHICLE_URLS: Record<VehicleId, string> = {
   hovercar: `${import.meta.env.BASE_URL}assets/vehicles/hovercar.glb`,
@@ -223,6 +223,8 @@ class ErrBoundary extends Component<
   }
 }
 
+export type GripLevel = 'green' | 'amber' | 'red'
+
 export type VehicleState = {
   position: THREE.Vector3
   quaternion: THREE.Quaternion
@@ -230,6 +232,8 @@ export type VehicleState = {
   lap: number
   lateral: number
   vehicleId: VehicleId
+  /** Slot-car grip feedback for HUD */
+  grip: GripLevel
 }
 
 /** Shared snapshot so racers can steer around each other */
@@ -270,6 +274,13 @@ type Props = {
   startLateral?: number
   /** Normalized MIDI/slider speed 0–1 for this lineup slot */
   speed01Ref?: MutableRefObject<number>
+  /**
+   * When true, ignore live MIDI and use countdownLatchRef (frozen for start).
+   * When false/racing, follow speed01Ref live.
+   */
+  throttleFrozen?: boolean
+  /** Captured speed01 at countdown start / GO latch */
+  countdownLatchRef?: MutableRefObject<number>
   onLap?: (lap: number, vehicleId: VehicleId) => void
   onFinished?: (vehicleId: VehicleId, racerIndex: number) => void
 }
@@ -295,6 +306,8 @@ export function Vehicle({
   startT = 0,
   startLateral = 0,
   speed01Ref,
+  throttleFrozen = false,
+  countdownLatchRef,
   onLap,
   onFinished,
 }: Props) {
@@ -339,8 +352,16 @@ export function Vehicle({
   /** Seconds before another corner spin-out can fire */
   const spinCooldownRef = useRef(0)
   const finishedRef = useRef(false)
-  const defaultSpeed01Ref = useRef(0.5)
+  /** Smoothed throttle (inertia / coast) */
+  const actualBaseRef = useRef(0.02)
+  /** Builds while carrying excess speed into bends */
+  const deslotRef = useRef(0)
+  /** Must lift knob after a spin before power returns */
+  const powerGateRef = useRef(false)
+  const powerGateLiftHoldRef = useRef(0)
+  const defaultSpeed01Ref = useRef(0.28)
   const speedRef = speed01Ref ?? defaultSpeed01Ref
+  const gripRef = useRef<GripLevel>('green')
 
   const wrapMap = useMemo(() => {
     if (vehicleLook !== 'wrap' || !vehicleWrap) return null
@@ -417,6 +438,10 @@ export function Vehicle({
           }
           if (d.kind === 'oil') {
             onOil = true
+            if (oilSpinRef.current <= 0) {
+              powerGateRef.current = true
+              powerGateLiftHoldRef.current = 0
+            }
             oilSpinRef.current = Math.max(oilSpinRef.current, 1.45)
           }
           if (d.kind === 'water') {
@@ -518,8 +543,42 @@ export function Vehicle({
       oilAngleRef.current = THREE.MathUtils.damp(a, 0, 6, delta)
     }
 
-    // --- Slot-car grip: measure bend BEFORE steering, so overspeed can win ---
-    const baseSpeed = speed01ToBase(speedRef.current)
+    // --- Slot-car skill loop: inertia → hard maxSafe → deslot meter → power gate ---
+    const knob01 = throttleFrozen
+      ? (countdownLatchRef?.current ?? speedRef.current)
+      : speedRef.current
+    let targetBase = speed01ToBase(knob01)
+
+    // After a spin: crawl until player lifts the knob
+    if (powerGateRef.current) {
+      if (knob01 < POWER_GATE_LIFT) {
+        powerGateLiftHoldRef.current += delta
+        if (powerGateLiftHoldRef.current >= 0.25) {
+          powerGateRef.current = false
+          powerGateLiftHoldRef.current = 0
+        }
+      } else {
+        powerGateLiftHoldRef.current = 0
+      }
+      if (powerGateRef.current) {
+        targetBase = Math.min(targetBase, 0.035)
+      }
+    }
+
+    // Inertia: snappy accel, slower coast (must lift early for corners)
+    {
+      const cur = actualBaseRef.current
+      const rising = targetBase > cur
+      const rate = rising ? 10 : 3.2 // ~0.2s accel, ~0.55s coast
+      const k = 1 - Math.exp(-rate * delta)
+      actualBaseRef.current = cur + (targetBase - cur) * k
+      if (!canMove) {
+        // Countdown: track target but don't coast-spin up from zero mid-count
+        actualBaseRef.current = targetBase
+      }
+    }
+    const actualBase = actualBaseRef.current
+
     const lookNear = 0.0025
     const lookFar = 0.035
     const tanFlat = curve.getTangentAt(tNow).clone()
@@ -545,7 +604,6 @@ export function Vehicle({
     const turnFar = Math.acos(
       THREE.MathUtils.clamp(tanFlat.dot(tanFar), -1, 1),
     )
-    // Very sensitive — almost any bend reads as a corner
     const turnFactor = Math.max(
       THREE.MathUtils.smoothstep(0.004, 0.07, turnNear),
       THREE.MathUtils.smoothstep(0.012, 0.2, turnFar),
@@ -568,27 +626,50 @@ export function Vehicle({
       }
     }
 
-    // Safe speed drops fast with bend: straight ~0.42, medium ~0.09, hairpin ~0.04
-    const bendSafe =
-      0.04 + 0.38 * Math.pow(1 - turnFactor, 2.8)
+    // Straight ≈ 0.42 · medium ≈ 0.09 · hairpin ≈ 0.04
+    const bendSafe = 0.035 + 0.385 * Math.pow(1 - turnFactor, 3.0)
     const maxSafe =
       bendSafe * THREE.MathUtils.lerp(1, 0.35, obstacleThreat)
+
     const provisionalMul =
       (1 + boostRef.current * 0.45) *
       (hitSlowRef.current > 0 ? 0.7 : 1) *
       (oilSpinRef.current > 0 ? 0.35 : 1) *
       (1 - peerSlowRef.current)
-    const provisionalSpeed = baseSpeed * provisionalMul
-    const ratio = provisionalSpeed / Math.max(maxSafe, 0.03)
-    const overspeeding = canMove && ratio > 1.02 && oilSpinRef.current <= 0
 
-    // Prefer centerline only when under control — never fight a slide
-    let avoidTarget = 0
+    const desired = actualBase * provisionalMul
+    const excess = Math.max(0, desired - maxSafe)
+    const capped = Math.min(desired, maxSafe)
+    const underControl =
+      canMove && excess < 0.002 && oilSpinRef.current <= 0 && deslotRef.current < 0.15
+    const overspeeding = canMove && excess > 0.002 && oilSpinRef.current <= 0
+
+    // Deslot meter — builds even near centerline; forces the lift
+    if (canMove && excess > 0) {
+      deslotRef.current +=
+        excess * (0.55 + turnFactor * 1.4) * delta * 60 * 0.55
+    } else if (canMove) {
+      deslotRef.current = Math.max(0, deslotRef.current - delta * 1.1)
+    } else {
+      deslotRef.current = 0
+    }
+    deslotRef.current = Math.min(deslotRef.current, 1.35)
+
+    gripRef.current =
+      excess > 0.004 || deslotRef.current > 0.35
+        ? 'red'
+        : desired > maxSafe * 0.82 || deslotRef.current > 0.12
+          ? 'amber'
+          : 'green'
+
+    // Prefer grid lane when calm; never fight a slide/spin
+    let avoidTarget = startLateral
     let peerSlow = 0
     let strongestPass = 0
     let passing = false
 
-    if (canMove && !overspeeding) {
+    if (underControl) {
+      avoidTarget = startLateral
       const lookWindow = 0.09
       for (const obs of track.obstacles) {
         let dt = obs.t - tNow
@@ -679,15 +760,7 @@ export function Vehicle({
         avoidTarget =
           Math.abs(strongestPass) >= Math.abs(avoidTarget)
             ? strongestPass
-            : avoidTarget + strongestPass * 0.35
-      }
-
-      const onGrassHint = Math.abs(lateralOutRef.current) > asphaltHalf
-      if (
-        (oilSpinRef.current > 0 || onGrassHint) &&
-        Math.abs(strongestPass) < 0.2
-      ) {
-        avoidTarget *= 0.25
+            : avoidTarget * 0.35 + strongestPass
       }
 
       peerSlowRef.current = THREE.MathUtils.damp(
@@ -702,7 +775,7 @@ export function Vehicle({
         -asphaltHalf + 0.25,
         asphaltHalf - 0.25,
       )
-      const avoidRate = Math.abs(avoidTarget) > 0.2 ? 3.4 : 2.4
+      const avoidRate = Math.abs(avoidTarget - startLateral) > 0.25 ? 3.2 : 2.2
       avoidLatRef.current = THREE.MathUtils.damp(
         avoidLatRef.current,
         avoidTarget,
@@ -712,14 +785,17 @@ export function Vehicle({
     } else if (!canMove) {
       avoidLatRef.current = startLateral
       cornerDriftRef.current = 0
+      deslotRef.current = 0
       peerSlowRef.current = 0
       passSideRef.current = 0
       oilSpinRef.current = 0
       oilAngleRef.current = 0
       waterLatRef.current = 0
       hitLatVelRef.current = 0
+      powerGateRef.current = false
+      powerGateLiftHoldRef.current = 0
     } else {
-      // Overspeeding: freeze steering toward center; commit the slide
+      // Overspeed / deslot / spin: freeze centerline pull
       peerSlowRef.current = THREE.MathUtils.damp(
         peerSlowRef.current,
         0,
@@ -732,34 +808,35 @@ export function Vehicle({
     const recovering =
       onOilSpin || Math.abs(lateralOutRef.current) > asphaltHalf
 
-    if (overspeeding) {
-      const excess = ratio - 1
-      // Hard dump wide — full MIDI through a bend leaves the ribbon in <0.5s
-      cornerDriftRef.current +=
-        outward * (2.2 * excess + 5.5 * excess * excess) * delta * 60
+    // Drift from excess + deslot meter (commits wide before spin)
+    if (overspeeding || deslotRef.current > 0.2) {
+      const dump =
+        excess * (2.8 + 6 * excess) + deslotRef.current * 1.8
+      cornerDriftRef.current += outward * dump * delta * 60
     } else if (canMove && oilSpinRef.current <= 0) {
       cornerDriftRef.current = THREE.MathUtils.damp(
         cornerDriftRef.current,
         0,
-        recovering ? 3.2 : 2.4,
+        recovering ? 2.4 : 1.6,
         delta,
       )
     }
 
-    const absLatNow = Math.abs(
-      avoidLatRef.current + cornerDriftRef.current,
-    )
-    const farOff = absLatNow > asphaltHalf + 0.15
-    const hotCorner = ratio > 1.2 && turnFactor > 0.12 && absLatNow > 0.45
+    // Spin from deslot meter even near centerline — force the lift
     if (
       canMove &&
-      (farOff || hotCorner) &&
-      ratio > 1.08 &&
       oilSpinRef.current <= 0 &&
-      spinCooldownRef.current <= 0
+      spinCooldownRef.current <= 0 &&
+      (deslotRef.current >= 0.85 ||
+        (deslotRef.current >= 0.55 &&
+          Math.abs(avoidLatRef.current + cornerDriftRef.current) >
+            asphaltHalf * 0.55))
     ) {
       oilSpinRef.current = 1.55
       spinCooldownRef.current = 2.4
+      powerGateRef.current = true
+      powerGateLiftHoldRef.current = 0
+      deslotRef.current = 0.4
     }
 
     if (oilSpinRef.current > 0) {
@@ -776,16 +853,17 @@ export function Vehicle({
       lateralLimit - 0.15,
     )
 
+    const absLatNow = Math.abs(
+      avoidLatRef.current + cornerDriftRef.current,
+    )
     const onGrass = absLatNow > asphaltHalf
-    const scrub =
-      ratio > 1 ? 1 / (1 + (ratio - 1) * 1.6) : 1
 
-    const speedMul =
-      (canMove ? provisionalMul : 0) *
-      (onGrass ? 0.22 : 1) *
-      scrub
+    // Hard ceiling on ribbon speed; grass still hurts
+    const ribbonSpeed = canMove ? capped : 0
+    const speedMul = onGrass ? 0.22 : 1
     const dt =
-      ((reverseDirection ? -1 : 1) * baseSpeed * speedMul * delta * 60) / len
+      ((reverseDirection ? -1 : 1) * ribbonSpeed * speedMul * delta * 60) /
+      len
     const prevT = tRef.current
     tRef.current = (tRef.current + dt + 1) % 1
 
@@ -1040,6 +1118,7 @@ export function Vehicle({
       lap: lapRef.current,
       lateral: clampedLateral,
       vehicleId,
+      grip: gripRef.current,
     }
 
     if (peersRef) {

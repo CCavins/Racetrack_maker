@@ -5,10 +5,11 @@ import * as THREE from 'three'
 import { buildTrack3D } from '../lib/buildTrack3D'
 import { useTrackStore } from '../state/trackStore'
 import { useMidiControl } from '../midi/midiControlStore'
+import { DEFAULT_SPEED01 } from '../midi/midiTypes'
 import { VEHICLE_META, getRaceVehicles, type VehicleId } from '../types'
 import { TrackMesh } from './TrackMesh'
 import { PropInstances } from './PropInstances'
-import { Vehicle, type PeerSnapshot, type VehicleState } from './Vehicle'
+import { Vehicle, type GripLevel, type PeerSnapshot, type VehicleState } from './Vehicle'
 import { MidiSettingsPanel } from './MidiSettingsPanel'
 import './RaceView.css'
 
@@ -41,6 +42,7 @@ function emptyState(id: VehicleId): VehicleState {
     lap: 0,
     lateral: 0,
     vehicleId: id,
+    grip: 'green',
   }
 }
 
@@ -69,6 +71,8 @@ function SceneContent({
   stateRefs,
   peersRef,
   speed01Refs,
+  countdownLatchRefs,
+  throttleFrozen,
   racers,
   running,
   motionEnabled,
@@ -85,6 +89,8 @@ function SceneContent({
   stateRefs: React.MutableRefObject<VehicleState>[]
   peersRef: React.MutableRefObject<PeerSnapshot[]>
   speed01Refs: React.MutableRefObject<number>[]
+  countdownLatchRefs: React.MutableRefObject<number>[]
+  throttleFrozen: boolean
   racers: VehicleId[]
   running: boolean
   motionEnabled: boolean
@@ -172,6 +178,8 @@ function SceneContent({
             startT={START_T}
             startLateral={startLateralFor(i, racers.length, track.roadWidth)}
             speed01Ref={speed01Refs[i]}
+            throttleFrozen={throttleFrozen}
+            countdownLatchRef={countdownLatchRefs[i]}
             onLap={onLap}
             onFinished={onFinished}
           />
@@ -306,6 +314,7 @@ type BoardRow = {
   t: number
   progress: number
   place: number
+  grip: GripLevel
 }
 
 export function RaceView() {
@@ -354,6 +363,14 @@ export function RaceView() {
       active: false,
     })),
   )
+  /** Frozen throttle at scene-ready — vehicles ignore live MIDI until GO */
+  const countdownLatchRefs = useMemo(
+    () =>
+      Array.from({ length: 4 }, () => ({
+        current: DEFAULT_SPEED01,
+      })),
+    [],
+  )
 
   useEffect(() => {
     peersRef.current = racers.map(() => ({
@@ -384,6 +401,10 @@ export function RaceView() {
   useEffect(() => {
     if (!sceneReady) return
     let cancelled = false
+    // Latch current knob values so mid-countdown CC moves don't cheat
+    for (let i = 0; i < countdownLatchRefs.length; i++) {
+      countdownLatchRefs[i].current = speed01Refs[i]?.current ?? DEFAULT_SPEED01
+    }
     const sleep = (ms: number) =>
       new Promise<void>((r) => window.setTimeout(r, ms))
     ;(async () => {
@@ -405,7 +426,7 @@ export function RaceView() {
     return () => {
       cancelled = true
     }
-  }, [sceneReady])
+  }, [sceneReady, countdownLatchRefs, speed01Refs])
 
   const onLap = useCallback(
     (n: number, vehicleId: VehicleId) => {
@@ -467,6 +488,7 @@ export function RaceView() {
             t,
             progress,
             place: 0,
+            grip: s?.grip ?? 'green',
           }
         })
         rows.sort((a, b) => b.progress - a.progress)
@@ -578,6 +600,8 @@ export function RaceView() {
             stateRefs={stateRefs}
             peersRef={peersRef}
             speed01Refs={speed01Refs}
+            countdownLatchRefs={countdownLatchRefs}
+            throttleFrozen={!racing}
             racers={racers}
             running={sceneReady}
             motionEnabled={racing}
@@ -673,6 +697,30 @@ export function RaceView() {
             {' · '}
             {bestLapMs !== null ? `Best ${fmt(bestLapMs)}` : 'Best —'}
           </p>
+          {sceneReady && (
+            <div className="hud-grip" aria-label="Grip">
+              {(board.length > 0 ? board : racers.map((id, index) => ({
+                  index,
+                  id,
+                  grip: 'green' as GripLevel,
+                }))).map((row) => {
+                const showAll = racers.length <= 4
+                if (!showAll && row.index !== chaseIndex) return null
+                const marker =
+                  RACER_MARKER_COLORS[row.index] ?? RACER_MARKER_COLORS[0]
+                return (
+                  <span
+                    key={`grip-${row.index}`}
+                    className={`hud-grip-pip grip-${row.grip}${
+                      row.index === chaseIndex ? ' chase' : ''
+                    }`}
+                    title={`Racer ${row.index + 1} grip`}
+                    style={{ boxShadow: `inset 0 0 0 1px ${marker}55` }}
+                  />
+                )
+              })}
+            </div>
+          )}
           {board.length > 1 && (
             <ol className="hud-board">
               {board.map((row) => {
@@ -705,6 +753,10 @@ export function RaceView() {
                       />
                       <span className="hud-place">P{row.place}</span>
                       <span className="hud-racer">{row.label}</span>
+                      <span
+                        className={`hud-grip-inline grip-${row.grip}`}
+                        aria-hidden
+                      />
                       <span className="hud-lap">{lapLabel}</span>
                     </button>
                   </li>

@@ -112,17 +112,53 @@ export function MidiControlProvider({ children }: { children: ReactNode }) {
   const learnSlotRef = useRef(learnSlot)
   learnSlotRef.current = learnSlot
 
-  const persist = useCallback((nextBindings: MidiBinding[], nextSpeed: number[]) => {
-    try {
-      const payload: MidiPersisted = {
-        bindings: nextBindings,
-        speed01: nextSpeed,
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingPersistRef = useRef<{
+    bindings: MidiBinding[]
+    speed: number[]
+  } | null>(null)
+
+  const flushPersist = useCallback(
+    (nextBindings: MidiBinding[], nextSpeed: number[]) => {
+      try {
+        const payload: MidiPersisted = {
+          bindings: nextBindings,
+          speed01: nextSpeed,
+        }
+        localStorage.setItem(MIDI_STORAGE_KEY, JSON.stringify(payload))
+      } catch {
+        /* ignore quota */
       }
-      localStorage.setItem(MIDI_STORAGE_KEY, JSON.stringify(payload))
-    } catch {
-      /* ignore quota */
-    }
-  }, [])
+    },
+    [],
+  )
+
+  /** Throttle localStorage writes — CC spam should not hit disk every frame */
+  const schedulePersist = useCallback(
+    (nextBindings: MidiBinding[], nextSpeed: number[]) => {
+      pendingPersistRef.current = { bindings: nextBindings, speed: nextSpeed }
+      if (persistTimerRef.current != null) return
+      persistTimerRef.current = setTimeout(() => {
+        persistTimerRef.current = null
+        const pending = pendingPersistRef.current
+        pendingPersistRef.current = null
+        if (pending) flushPersist(pending.bindings, pending.speed)
+      }, 400)
+    },
+    [flushPersist],
+  )
+
+  useEffect(
+    () => () => {
+      if (persistTimerRef.current != null) {
+        clearTimeout(persistTimerRef.current)
+        persistTimerRef.current = null
+      }
+      const pending = pendingPersistRef.current
+      if (pending) flushPersist(pending.bindings, pending.speed)
+    },
+    [flushPersist],
+  )
 
   const setSpeed = useCallback(
     (slot: number, value01: number) => {
@@ -132,11 +168,11 @@ export function MidiControlProvider({ children }: { children: ReactNode }) {
       setSpeed01State((prev) => {
         const next = [...prev]
         next[slot] = v
-        persist(bindingsRef.current, next)
+        schedulePersist(bindingsRef.current, next)
         return next
       })
     },
-    [persist, speed01Refs],
+    [schedulePersist, speed01Refs],
   )
 
   const setBinding = useCallback(
@@ -146,11 +182,14 @@ export function MidiControlProvider({ children }: { children: ReactNode }) {
         const next = prev.map((b, i) =>
           i === slot ? { channel: binding.channel, cc: binding.cc } : b,
         )
-        persist(next, speed01Refs.map((r) => r.current))
+        flushPersist(
+          next,
+          speed01Refs.map((r) => r.current),
+        )
         return next
       })
     },
-    [persist, speed01Refs],
+    [flushPersist, speed01Refs],
   )
 
   const startLearn = useCallback((slot: number) => {
@@ -188,7 +227,7 @@ export function MidiControlProvider({ children }: { children: ReactNode }) {
         setSpeed01State((prev) => {
           const next = [...prev]
           next[learning] = v
-          persist(
+          flushPersist(
             bindingsRef.current.map((b, i) =>
               i === learning ? { channel, cc } : b,
             ),
@@ -214,7 +253,7 @@ export function MidiControlProvider({ children }: { children: ReactNode }) {
         if (Math.abs((prev[slot] ?? 0) - v) < 0.002) return prev
         const next = [...prev]
         next[slot] = v
-        persist(bindingsRef.current, next)
+        schedulePersist(bindingsRef.current, next)
         return next
       })
       setRawCc((prev) => {

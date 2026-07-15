@@ -15,8 +15,11 @@ export const DEFAULT_MIDI_BINDINGS: MidiBinding[] = [
   { channel: 1, cc: 94 },
 ]
 
-/** Default mid throw — safe on mild bends, not hairpins */
-export const DEFAULT_SPEED01 = 0.42
+/** Default throw — survives mild bends, not hairpins */
+export const DEFAULT_SPEED01 = 0.28
+
+/** After a spin, must lift below this to regain power */
+export const POWER_GATE_LIFT = 0.2
 
 export const MIDI_STORAGE_KEY = 'circuit-sketch-midi-v1'
 
