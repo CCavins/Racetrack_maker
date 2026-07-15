@@ -167,7 +167,7 @@ export function bridgeToSnapshot(bridge: RacePoseBridge): RacePoseSnapshot | nul
 }
 
 /**
- * Apply a snapshot only if it is newer than what we already have.
+ * Apply a snapshot only if it belongs to the adopted session and is newer.
  * Returns false when the message is ignored (stale / other session).
  */
 export function applyPoseSnapshot(
@@ -178,16 +178,15 @@ export function applyPoseSnapshot(
     return false
   }
 
-  // Locked to first live session; ignore other race tabs / zombie publishers
-  if (bridge.session !== 'local' && msg.session !== bridge.session) {
+  // Must match the session we adopted (via race-session active)
+  if (bridge.session === 'local' || msg.session !== bridge.session) {
     return false
   }
 
-  if (msg.session === bridge.session && msg.seq <= bridge.seq) {
+  if (msg.seq <= bridge.seq) {
     return false
   }
 
-  bridge.session = msg.session
   bridge.seq = msg.seq
   bridge.racing = msg.racing
   bridge.countdown = msg.countdown
@@ -212,4 +211,40 @@ export function applyPoseSnapshot(
     bridge.vehicleIds[i] = car.vehicleId || bridge.vehicleIds[i]
   }
   return true
+}
+
+export type RaceSessionMessage = {
+  type: 'race-session'
+  session: string
+  active: boolean
+}
+
+/** Drop poses and unlock — map shows “waiting” until the next race-session. */
+export function clearRacePoseBridge(bridge: RacePoseBridge) {
+  bridge.session = 'local'
+  bridge.seq = 0
+  bridge.count = 0
+  bridge.racing = false
+  bridge.countdown = null
+  bridge.data.fill(0)
+  for (let i = 0; i < 4; i++) {
+    bridge.labels[i] = ''
+    bridge.vehicleIds[i] = ''
+    bridge.colors[i] = MARKER_COLORS[i] ?? MARKER_COLORS[0]
+  }
+}
+
+/** Lock onto a new race (restart / edit→race). Latest active session wins. */
+export function adoptRaceSession(bridge: RacePoseBridge, session: string) {
+  bridge.session = session
+  bridge.seq = 0
+  bridge.count = 0
+  bridge.racing = false
+  bridge.countdown = null
+  bridge.data.fill(0)
+  for (let i = 0; i < 4; i++) {
+    bridge.labels[i] = ''
+    bridge.vehicleIds[i] = ''
+    bridge.colors[i] = MARKER_COLORS[i] ?? MARKER_COLORS[0]
+  }
 }

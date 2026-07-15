@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { STICKER_META, STICKER_TYPES, snapsToTrack, type StickerType } from '../types'
+import { clientToDesignPos } from '../lib/designCanvas'
 import { snapToClosedPath } from '../lib/pathSmooth'
 import { useTrackStore } from '../state/trackStore'
 import './StickerPalette.css'
@@ -11,18 +12,7 @@ function clientToCanvasPos(
   clientY: number,
   canvas: HTMLCanvasElement,
 ) {
-  const rect = canvas.getBoundingClientRect()
-  const scaleX = canvas.width / rect.width
-  const scaleY = canvas.height / rect.height
-  return {
-    x: (clientX - rect.left) * scaleX,
-    y: (clientY - rect.top) * scaleY,
-    over:
-      clientX >= rect.left &&
-      clientX <= rect.right &&
-      clientY >= rect.top &&
-      clientY <= rect.bottom,
-  }
+  return clientToDesignPos(clientX, clientY, canvas)
 }
 
 export function StickerPalette() {

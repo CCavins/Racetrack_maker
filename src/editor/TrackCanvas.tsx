@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTrackStore } from '../state/trackStore'
 import {
+  DESIGN_CANVAS_H,
+  DESIGN_CANVAS_W,
+  clientToDesignPos,
+  designToCssPos,
+} from '../lib/designCanvas'
+import {
   createCirclePath,
   hitTestPoint,
   nearestSegment,
@@ -53,21 +59,12 @@ function getCanvasPos(
   e: { clientX: number; clientY: number },
   canvas: HTMLCanvasElement,
 ): Vec2 {
-  const rect = canvas.getBoundingClientRect()
-  const scaleX = canvas.width / rect.width
-  const scaleY = canvas.height / rect.height
-  return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top) * scaleY,
-  }
+  const { x, y } = clientToDesignPos(e.clientX, e.clientY, canvas)
+  return { x, y }
 }
 
 function canvasToCss(canvas: HTMLCanvasElement, p: Vec2): Vec2 {
-  const rect = canvas.getBoundingClientRect()
-  return {
-    x: (p.x / canvas.width) * rect.width,
-    y: (p.y / canvas.height) * rect.height,
-  }
+  return designToCssPos(p, canvas)
 }
 
 function drawTrackBand(
@@ -251,8 +248,13 @@ export function TrackCanvas() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const w = canvas.width
-    const h = canvas.height
+    const dpr = canvas.width / DESIGN_CANVAS_W || 1
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+    const w = DESIGN_CANVAS_W
+    const h = DESIGN_CANVAS_H
 
     const grad = ctx.createLinearGradient(0, 0, w, h)
     grad.addColorStop(0, '#3d5a45')
@@ -392,63 +394,74 @@ export function TrackCanvas() {
 
   redrawRef.current = redraw
 
-  // Size the canvas once on mount; keep ResizeObserver deps stable so hover/redraw
-  // changes don't tear it down (that was wiping the bitmap and making the track vanish).
+  // Fixed logical design size (1600×1000). Window only changes CSS letterbox scale.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const parent = canvas.parentElement
     if (!parent) return
 
-    const applySize = () => {
+    const ensureBuffer = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      const bufW = Math.round(DESIGN_CANVAS_W * dpr)
+      const bufH = Math.round(DESIGN_CANVAS_H * dpr)
+      if (canvas.width !== bufW || canvas.height !== bufH) {
+        canvas.width = bufW
+        canvas.height = bufH
+      }
+    }
+
+    const fitDisplay = () => {
       const rect = parent.getBoundingClientRect()
       if (rect.width < 2 || rect.height < 2) return
+      const scale = Math.min(
+        rect.width / DESIGN_CANVAS_W,
+        rect.height / DESIGN_CANVAS_H,
+      )
+      canvas.style.width = `${DESIGN_CANVAS_W * scale}px`
+      canvas.style.height = `${DESIGN_CANVAS_H * scale}px`
+    }
 
-      const nextW = Math.max(1, Math.round(rect.width * dpr))
-      const nextH = Math.max(1, Math.round(rect.height * dpr))
+    const migrateAndInit = () => {
+      ensureBuffer()
+      fitDisplay()
+
       const prev = lastSizeRef.current
-
-      if (canvas.width !== nextW || canvas.height !== nextH) {
-        if (
-          prev &&
-          prev.w > 0 &&
-          prev.h > 0 &&
-          pathLenRef.current >= 4 &&
-          (prev.w !== nextW || prev.h !== nextH)
-        ) {
-          scaleDesignToCanvas(prev.w, prev.h, nextW, nextH)
-        }
-        canvas.width = nextW
-        canvas.height = nextH
-        canvas.style.width = `${rect.width}px`
-        canvas.style.height = `${rect.height}px`
-        lastSizeRef.current = { w: nextW, h: nextH }
-        setCanvasSize(nextW, nextH)
+      if (
+        prev &&
+        pathLenRef.current >= 4 &&
+        (prev.w !== DESIGN_CANVAS_W || prev.h !== DESIGN_CANVAS_H)
+      ) {
+        scaleDesignToCanvas(prev.w, prev.h, DESIGN_CANVAS_W, DESIGN_CANVAS_H)
       }
+      lastSizeRef.current = { w: DESIGN_CANVAS_W, h: DESIGN_CANVAS_H }
+      setCanvasSize(DESIGN_CANVAS_W, DESIGN_CANVAS_H)
 
       if (!initializedRef.current) {
         initializedRef.current = true
         if (pathLenRef.current < 4) {
-          setPath(createCirclePath(nextW, nextH))
+          setPath(createCirclePath(DESIGN_CANVAS_W, DESIGN_CANVAS_H))
           return
         }
       }
-
       redrawRef.current()
     }
 
-    applySize()
+    migrateAndInit()
     const ro = new ResizeObserver(() => {
-      applySize()
+      ensureBuffer()
+      fitDisplay()
+      redrawRef.current()
+      // Keep sticker popup aligned after letterbox resize
+      updatePopupPos()
     })
     ro.observe(parent)
-    window.addEventListener('resize', applySize)
+    window.addEventListener('resize', fitDisplay)
     return () => {
       ro.disconnect()
-      window.removeEventListener('resize', applySize)
+      window.removeEventListener('resize', fitDisplay)
     }
-  }, [setPath, scaleDesignToCanvas, setCanvasSize])
+  }, [setPath, scaleDesignToCanvas, setCanvasSize, updatePopupPos])
 
   useEffect(() => {
     redraw()

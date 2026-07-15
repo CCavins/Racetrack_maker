@@ -68,6 +68,10 @@ export function RaceBroadcastPublisher({
     let lastPost = 0
     let raf = 0
 
+    const announce = (active: boolean) => {
+      ch?.postMessage({ type: 'race-session', session, active })
+    }
+
     const publish = (force = false) => {
       if (gen !== publishGeneration) return
       const places = new Array(racers.length).fill(0).map((_, i) => i + 1)
@@ -103,10 +107,12 @@ export function RaceBroadcastPublisher({
 
     const onHello = (ev: MessageEvent) => {
       if (ev.data?.type === 'spectate-hello') {
+        announce(true)
         publish(true)
       }
     }
     ch?.addEventListener('message', onHello)
+    announce(true)
     publish(true)
     const t1 = window.setTimeout(() => publish(true), 250)
 
@@ -114,6 +120,7 @@ export function RaceBroadcastPublisher({
       publishGeneration++
       cancelAnimationFrame(raf)
       window.clearTimeout(t1)
+      announce(false)
       ch?.removeEventListener('message', onHello)
       ch?.close()
       if (window.__circuitSketchRace === bridge) {

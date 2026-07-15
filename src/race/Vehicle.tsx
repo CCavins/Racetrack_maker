@@ -593,7 +593,9 @@ export function Vehicle({
       THREE.MathUtils.smoothstep(0.012, 0.2, turnFar),
     )
     const turnSigned = tanFlat.x * tanFar.z - tanFlat.z * tanFar.x
-    const outward = Math.sign(turnSigned || 1)
+    // Near-straight: no invented "outward" — (turnSigned || 1) used to always jolt +1
+    const outward =
+      turnFactor < 0.045 ? 0 : Math.sign(turnSigned) || 0
 
     let obstacleThreat = 0
     if (canMove) {
@@ -615,21 +617,29 @@ export function Vehicle({
     const maxSafe =
       bendSafe * THREE.MathUtils.lerp(1, 0.35, obstacleThreat)
 
-    const provisionalMul =
-      (1 + boostRef.current * 0.45) *
+    const nonBoostMul =
       (hitSlowRef.current > 0 ? 0.7 : 1) *
       (oilSpinRef.current > 0 ? 0.35 : 1) *
       (1 - peerSlowRef.current)
 
-    const desired = actualBase * provisionalMul
-    const excess = Math.max(0, desired - maxSafe)
-    const capped = Math.min(desired, maxSafe)
+    // Throttle-only desired speed — boost is along-slot thrust, not corner excess
+    const throttleDesired = actualBase * nonBoostMul
+    const boostFrac = boostRef.current * 0.45
+    const boostExtra = throttleDesired * boostFrac
+    const onBoost = boostRef.current > 0.05
+
+    const excess = Math.max(0, throttleDesired - maxSafe)
+    const capped = Math.min(throttleDesired, maxSafe) + boostExtra
     const underControl =
-      canMove && excess < 0.002 && oilSpinRef.current <= 0 && deslotRef.current < 0.15
+      canMove &&
+      excess < 0.002 &&
+      oilSpinRef.current <= 0 &&
+      deslotRef.current < 0.15
     const overspeeding = canMove && excess > 0.002 && oilSpinRef.current <= 0
 
     // Deslot meter — builds even near centerline; forces the lift
-    if (canMove && excess > 0) {
+    // Boost pads do not fill this (they shove you along the ribbon)
+    if (canMove && excess > 0 && !onBoost) {
       deslotRef.current +=
         excess * (0.55 + turnFactor * 1.4) * delta * 60 * 0.55
     } else if (canMove) {
@@ -642,18 +652,18 @@ export function Vehicle({
     gripRef.current =
       excess > 0.004 || deslotRef.current > 0.35
         ? 'red'
-        : desired > maxSafe * 0.82 || deslotRef.current > 0.12
+        : throttleDesired > maxSafe * 0.82 || deslotRef.current > 0.12
           ? 'amber'
           : 'green'
 
-    // Prefer grid lane when calm; never fight a slide/spin
-    let avoidTarget = startLateral
+    // Prefer grid lane when calm; boost pads lock to centerline thrust
+    let avoidTarget = onBoost ? 0 : startLateral
     let peerSlow = 0
     let strongestPass = 0
     let passing = false
 
     if (underControl) {
-      avoidTarget = startLateral
+      avoidTarget = onBoost ? 0 : startLateral
       const lookWindow = 0.09
       for (const obs of track.obstacles) {
         let dt = obs.t - tNow
@@ -793,7 +803,15 @@ export function Vehicle({
       onOilSpin || Math.abs(lateralOutRef.current) > asphaltHalf
 
     // Drift from excess + deslot meter (commits wide before spin)
-    if (overspeeding || deslotRef.current > 0.2) {
+    // Boost pads: cancel sideways dump and settle back toward the ribbon
+    if (onBoost && canMove && oilSpinRef.current <= 0) {
+      cornerDriftRef.current = THREE.MathUtils.damp(
+        cornerDriftRef.current,
+        0,
+        7,
+        delta,
+      )
+    } else if (overspeeding || deslotRef.current > 0.2) {
       const dump =
         excess * (2.8 + 6 * excess) + deslotRef.current * 1.8
       cornerDriftRef.current += outward * dump * delta * 60

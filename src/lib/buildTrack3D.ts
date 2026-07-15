@@ -266,10 +266,11 @@ export function buildTrack3D(design: TrackDesign): Track3D | null {
     }
 
     if (s.type === 'boost') {
+      const travelYaw = design.reverseDirection ? yaw + Math.PI : yaw
       decals.push({
         kind: 'boost',
         position: new THREE.Vector3(onRoad.x, onRoad.y + 0.04, onRoad.z),
-        rotation: yaw,
+        rotation: travelYaw,
         scale: s.scale,
       })
       continue

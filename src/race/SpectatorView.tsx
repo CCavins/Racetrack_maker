@@ -9,41 +9,62 @@ import { TrackMesh } from './TrackMesh'
 import { PropInstances } from './PropInstances'
 import { RaceVehicleVisual } from './Vehicle'
 import {
+  adoptRaceSession,
   applyPoseSnapshot,
+  clearRacePoseBridge,
   ensureLocalRacePoseBridge,
   getRacePoseBridge,
   MARKER_COLORS,
   POSE_STRIDE,
   RACE_POSE_CHANNEL,
   type RacePoseSnapshot,
+  type RaceSessionMessage,
 } from './racePoseBridge'
 import './SpectatorView.css'
 
 function OverviewCamera({
-  center,
-  span,
+  minX,
+  maxX,
+  minZ,
+  maxZ,
 }: {
-  center: THREE.Vector3
-  span: number
+  minX: number
+  maxX: number
+  minZ: number
+  maxZ: number
 }) {
-  const { camera } = useThree()
+  const { camera, size } = useThree()
 
   useLayoutEffect(() => {
-    const dist = Math.max(36, span * 1.15)
-    camera.position.set(
-      center.x + dist * 0.38,
-      center.y + dist * 0.72,
-      center.z + dist * 0.48,
-    )
-    camera.near = 0.5
-    camera.far = Math.max(280, dist * 5)
-    if ('fov' in camera) {
-      ;(camera as THREE.PerspectiveCamera).fov = 42
-      ;(camera as THREE.PerspectiveCamera).updateProjectionMatrix()
-    }
-    camera.lookAt(center.x, center.y + 0.4, center.z)
-    camera.updateProjectionMatrix()
-  }, [camera, center, span])
+    const persp = camera as THREE.PerspectiveCamera
+    const cx = (minX + maxX) / 2
+    const cz = (minZ + maxZ) / 2
+    const halfW = Math.max((maxX - minX) / 2, 4)
+    const halfD = Math.max((maxZ - minZ) / 2, 4)
+    // Cover track corners + roadside props
+    const radius = Math.hypot(halfW, halfD) * 1.22
+
+    const dir = new THREE.Vector3(0.42, 0.78, 0.52).normalize()
+    persp.fov = 40
+    const vFov = THREE.MathUtils.degToRad(persp.fov)
+    const aspect = Math.max(size.width / Math.max(size.height, 1), 0.5)
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect)
+
+    // Fit a sphere of `radius` in both axes; pull back a bit more for HUD chrome
+    const distV = radius / Math.sin(vFov / 2)
+    const distH = radius / Math.sin(hFov / 2)
+    const dist = Math.max(distV, distH, 32) * 1.08
+
+    const center = new THREE.Vector3(cx, 0, cz)
+    persp.position.copy(center).addScaledVector(dir, dist)
+    // Bias look toward the far side so the near (screen-bottom) edge isn't clipped
+    const look = center.clone().addScaledVector(dir, -radius * 0.12)
+    look.y = 0.35
+    persp.near = 0.5
+    persp.far = Math.max(320, dist * 5)
+    persp.lookAt(look)
+    persp.updateProjectionMatrix()
+  }, [camera, size.width, size.height, minX, maxX, minZ, maxZ])
 
   return null
 }
@@ -134,20 +155,22 @@ function SpectateRacer({
   )
 }
 
-function SpectatorScene({ racers }: { racers: VehicleId[] }) {
+function SpectatorScene({
+  racers,
+  raceEpoch,
+}: {
+  racers: VehicleId[]
+  raceEpoch: number
+}) {
   const { design } = useTrackStore()
   const track = useMemo(() => buildTrack3D(design), [design])
   const look = design.vehicleLook ?? 'stock'
-  const center = useMemo(() => {
-    if (!track) return new THREE.Vector3(0, 0, 0)
-    const { minX, maxX, minZ, maxZ } = track.bounds
-    return new THREE.Vector3((minX + maxX) / 2, 0, (minZ + maxZ) / 2)
-  }, [track])
 
   if (!track) return null
 
   const pad = 18
   const { minX, maxX, minZ, maxZ } = track.bounds
+  const edge = track.roadWidth * 0.65 + 2.5
   const groundSize = Math.max(maxX - minX, maxZ - minZ) + pad * 2
   const span = Math.max(maxX - minX, maxZ - minZ, 20)
 
@@ -156,7 +179,7 @@ function SpectatorScene({ racers }: { racers: VehicleId[] }) {
       <color attach="background" args={['#87a0b0']} />
       <fog
         attach="fog"
-        args={['#9eb0bc', Math.max(60, span * 1.4), Math.max(140, span * 3)]}
+        args={['#9eb0bc', Math.max(80, span * 1.8), Math.max(180, span * 4)]}
       />
       <ambientLight intensity={0.92} />
       <hemisphereLight args={['#f0f4f8', '#6a7a5c', 1.05]} />
@@ -211,7 +234,7 @@ function SpectatorScene({ racers }: { racers: VehicleId[] }) {
           focused && look === 'wrap' ? design.vehicleWrap : null
         return (
           <SpectateRacer
-            key={`${id}-${i}`}
+            key={`${raceEpoch}-${id}-${i}`}
             index={i}
             vehicleId={id}
             vehicleLook={racerLook}
@@ -231,7 +254,12 @@ function SpectatorScene({ racers }: { racers: VehicleId[] }) {
         far={12}
       />
 
-      <OverviewCamera center={center} span={span} />
+      <OverviewCamera
+        minX={minX - edge}
+        maxX={maxX + edge}
+        minZ={minZ - edge}
+        maxZ={maxZ + edge}
+      />
     </>
   )
 }
@@ -245,8 +273,9 @@ type BoardRow = {
 }
 
 export function SpectatorView() {
-  const { design } = useTrackStore()
+  const { design, reloadDesignFromStorage } = useTrackStore()
   const racers = useMemo(() => getRaceVehicles(design), [design])
+  const [raceEpoch, setRaceEpoch] = useState(0)
   const [board, setBoard] = useState<BoardRow[]>([])
   const [meta, setMeta] = useState<{
     racing: boolean
@@ -264,12 +293,10 @@ export function SpectatorView() {
     document.title = 'Circuit Sketch · Map'
   }, [])
 
-  // BroadcastChannel only — never copy TypedArrays from window.opener (stale grid poses).
+  // Follow race-session start/end so restart + edit→race re-bind the map.
   useEffect(() => {
     const local = ensureLocalRacePoseBridge()
-    // Reset so a refreshed map can lock onto the current race session
-    local.session = 'local'
-    local.seq = 0
+    clearRacePoseBridge(local)
 
     const ch =
       typeof BroadcastChannel !== 'undefined'
@@ -277,8 +304,48 @@ export function SpectatorView() {
         : null
 
     const onMessage = (ev: MessageEvent) => {
-      const msg = ev.data as RacePoseSnapshot | { type?: string }
-      if (!msg || msg.type !== 'race-poses') return
+      const msg = ev.data as
+        | RacePoseSnapshot
+        | RaceSessionMessage
+        | { type?: string }
+      if (!msg || typeof msg !== 'object') return
+
+      if (msg.type === 'race-session') {
+        const sessionMsg = msg as RaceSessionMessage
+        if (!sessionMsg.session) return
+        if (sessionMsg.active) {
+          adoptRaceSession(local, sessionMsg.session)
+          reloadDesignFromStorage()
+          setBoard([])
+          setMeta((m) => ({
+            ...m,
+            linked: false,
+            racing: false,
+            countdown: null,
+          }))
+          setRaceEpoch((n) => n + 1)
+          ch?.postMessage({ type: 'spectate-hello' })
+          return
+        }
+        // Race left / Start over — only clear if it was our session
+        if (
+          local.session === sessionMsg.session ||
+          local.session === 'local'
+        ) {
+          clearRacePoseBridge(local)
+          setBoard([])
+          setMeta((m) => ({
+            ...m,
+            linked: false,
+            racing: false,
+            countdown: null,
+          }))
+          setRaceEpoch((n) => n + 1)
+        }
+        return
+      }
+
+      if (msg.type !== 'race-poses') return
       if (!('cars' in msg) || !Array.isArray(msg.cars)) return
       applyPoseSnapshot(local, msg)
     }
@@ -286,18 +353,25 @@ export function SpectatorView() {
     ch?.addEventListener('message', onMessage)
     ch?.postMessage({ type: 'spectate-hello' })
     const ping = window.setInterval(() => {
-      // Re-request only while still waiting for the first pose
       if (local.session === 'local' || local.seq === 0) {
         ch?.postMessage({ type: 'spectate-hello' })
       }
     }, 1000)
 
+    const onStorage = (ev: StorageEvent) => {
+      if (ev.key === 'circuit-sketch-v1' || ev.key === 'circuit-sketch-wrap-v1') {
+        reloadDesignFromStorage()
+      }
+    }
+    window.addEventListener('storage', onStorage)
+
     return () => {
       window.clearInterval(ping)
+      window.removeEventListener('storage', onStorage)
       ch?.removeEventListener('message', onMessage)
       ch?.close()
     }
-  }, [])
+  }, [reloadDesignFromStorage])
 
   useEffect(() => {
     let raf = 0
@@ -351,7 +425,7 @@ export function SpectatorView() {
         dpr={[1, 1.75]}
       >
         <Suspense fallback={null}>
-          <SpectatorScene racers={racers} />
+          <SpectatorScene racers={racers} raceEpoch={raceEpoch} />
         </Suspense>
       </Canvas>
 

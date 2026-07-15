@@ -5,6 +5,7 @@ import {
   MIN_LAP_COUNT,
   getRaceVehicles,
 } from '../types'
+import { DESIGN_CANVAS_H, DESIGN_CANVAS_W } from '../lib/designCanvas'
 import { TrackCanvas } from './TrackCanvas'
 import { StickerPalette } from './StickerPalette'
 import { VehiclePicker } from './VehiclePicker'
@@ -69,19 +70,11 @@ export function EditorShell() {
   }
 
   const resetTrack = () => {
-    const canvas = document.querySelector(
-      '.track-canvas',
-    ) as HTMLCanvasElement | null
-    const w = canvas?.width || 800
-    const h = canvas?.height || 600
-    resetCircle(w, h)
+    resetCircle(DESIGN_CANVAS_W, DESIGN_CANVAS_H)
   }
 
   const resetEverything = () => {
-    const canvas = document.querySelector(
-      '.track-canvas',
-    ) as HTMLCanvasElement | null
-    clearAll(canvas?.width || 800, canvas?.height || 600)
+    clearAll(DESIGN_CANVAS_W, DESIGN_CANVAS_H)
   }
 
   const exportTrack = () => {
@@ -106,13 +99,7 @@ export function EditorShell() {
     const reader = new FileReader()
     reader.onload = () => {
       const text = typeof reader.result === 'string' ? reader.result : ''
-      const canvas = document.querySelector(
-        '.track-canvas',
-      ) as HTMLCanvasElement | null
-      const target =
-        canvas && canvas.width > 2 && canvas.height > 2
-          ? { w: canvas.width, h: canvas.height }
-          : undefined
+      const target = { w: DESIGN_CANVAS_W, h: DESIGN_CANVAS_H }
       const result = importDesignJson(text, target)
       if (!result.ok) {
         window.alert(`Could not import track: ${result.error}`)

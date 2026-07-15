@@ -26,6 +26,7 @@ import {
   getRaceVehicles,
 } from '../types'
 import { createCirclePath, resnapStickersToPath } from '../lib/pathSmooth'
+import { DESIGN_CANVAS_H, DESIGN_CANVAS_W } from '../lib/designCanvas'
 
 const STORAGE_KEY = 'circuit-sketch-v1'
 const WRAP_STORAGE_KEY = 'circuit-sketch-wrap-v1'
@@ -96,6 +97,7 @@ type TrackStore = {
   bestLapMs: number | null
   recordLapTime: (ms: number) => void
   clearAll: (width?: number, height?: number) => void
+  reloadDesignFromStorage: () => void
   canGenerate: boolean
   loadStatus: string | null
   setLoadStatus: (s: string | null) => void
@@ -353,6 +355,58 @@ function adaptDesignToCanvas(
   }))
 }
 
+function scaleDesignCoords(
+  design: TrackDesign,
+  fromW: number,
+  fromH: number,
+  toW: number,
+  toH: number,
+): TrackDesign {
+  if (fromW < 2 || fromH < 2 || toW < 2 || toH < 2) return design
+  if (fromW === toW && fromH === toH) return design
+  const sx = toW / fromW
+  const sy = toH / fromH
+  const path = design.path.map((p) => ({ x: p.x * sx, y: p.y * sy }))
+  const stickers = design.stickers.map((s) => ({
+    ...s,
+    x: s.x * sx,
+    y: s.y * sy,
+  }))
+  return {
+    ...design,
+    path,
+    stickers: withResnapped(path, stickers),
+    closed: true,
+  }
+}
+
+/** Every device shares one design surface size. */
+function normalizeToFixedCanvas(
+  design: TrackDesign,
+  canvasSize: { w: number; h: number } | null,
+): { design: TrackDesign; canvasSize: { w: number; h: number } } {
+  const target = { w: DESIGN_CANVAS_W, h: DESIGN_CANVAS_H }
+  if (
+    canvasSize &&
+    canvasSize.w > 0 &&
+    canvasSize.h > 0 &&
+    (canvasSize.w !== target.w || canvasSize.h !== target.h) &&
+    design.path.length >= 1
+  ) {
+    return {
+      design: scaleDesignCoords(
+        design,
+        canvasSize.w,
+        canvasSize.h,
+        target.w,
+        target.h,
+      ),
+      canvasSize: target,
+    }
+  }
+  return { design, canvasSize: target }
+}
+
 function loadPersisted(): {
   design: TrackDesign
   step: AppStep
@@ -369,7 +423,7 @@ function loadPersisted(): {
     }
     const step: AppStep =
       data.step === 'race' || data.step === 'draw' ? data.step : 'draw'
-    const design = normalizeDesign(data.design)
+    let design = normalizeDesign(data.design)
     // Wrap lives in a separate key so quota failures don't wipe it
     if (!design.vehicleWrap) {
       design.vehicleWrap = loadStoredWrap()
@@ -385,17 +439,19 @@ function loadPersisted(): {
       getRaceVehicles(design).length > 0
         ? 'race'
         : 'draw'
-    const canvasSize =
+    const rawCanvas =
       typeof data.canvasW === 'number' &&
       typeof data.canvasH === 'number' &&
       data.canvasW > 0 &&
       data.canvasH > 0
         ? { w: data.canvasW, h: data.canvasH }
         : null
+    const normalized = normalizeToFixedCanvas(design, rawCanvas)
+    design = normalized.design
     return {
       design,
       step: restoredStep,
-      canvasSize,
+      canvasSize: normalized.canvasSize,
       bestLapMs:
         typeof data.bestLapMs === 'number' && data.bestLapMs > 0
           ? data.bestLapMs
@@ -757,6 +813,14 @@ export function TrackProvider({ children }: { children: ReactNode }) {
     setStep('draw')
   }, [])
 
+  const reloadDesignFromStorage = useCallback(() => {
+    const p = loadPersisted()
+    if (!p) return
+    setDesign(p.design)
+    if (p.canvasSize) setCanvasSizeState(p.canvasSize)
+    if (p.bestLapMs != null) setBestLapMs(p.bestLapMs)
+  }, [])
+
   const canGenerate =
     design.closed &&
     design.path.length >= MIN_POINTS &&
@@ -799,6 +863,7 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       bestLapMs,
       recordLapTime,
       clearAll,
+      reloadDesignFromStorage,
       canGenerate,
       loadStatus,
       setLoadStatus,
@@ -834,6 +899,7 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       bestLapMs,
       recordLapTime,
       clearAll,
+      reloadDesignFromStorage,
       canGenerate,
       loadStatus,
     ],
