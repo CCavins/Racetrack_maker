@@ -2,6 +2,8 @@ import { TrackProvider, useTrackStore } from './state/trackStore'
 import { MidiControlProvider } from './midi/midiControlStore'
 import { EditorShell } from './editor/EditorShell'
 import { RaceView } from './race/RaceView'
+import { SpectatorView } from './race/SpectatorView'
+import { isSpectateMode } from './race/raceBroadcast'
 import './styles/app.css'
 
 function GeneratingOverlay() {
@@ -26,7 +28,6 @@ function AppSteps() {
 
   if (step === 'race') return <RaceView />
 
-  // Keep EditorShell mounted across draw ↔ generating so wrap canvas isn't wiped
   return (
     <>
       <EditorShell />
@@ -36,6 +37,16 @@ function AppSteps() {
 }
 
 export default function App() {
+  if (isSpectateMode()) {
+    return (
+      <TrackProvider>
+        <div className="app-root">
+          <SpectatorView />
+        </div>
+      </TrackProvider>
+    )
+  }
+
   return (
     <TrackProvider>
       <MidiControlProvider>

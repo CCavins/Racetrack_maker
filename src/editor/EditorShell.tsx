@@ -206,8 +206,9 @@ export function EditorShell() {
             />
           </label>
           <p className="race-settings-hint">
-            Lift early for corners; ease back on after a spin. MIDI knobs map to
-            racer slots when enabled. Cars line up side-by-side, then 3-2-1.
+            When MIDI speeds is on, the race HUD shows MIDI / Speeds controls.
+            Lift early for corners; ease back on after a spin. Cars line up
+            side-by-side, then 3-2-1.
           </p>
         </div>
 

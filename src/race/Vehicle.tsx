@@ -237,6 +237,8 @@ export type VehicleState = {
   vehicleId: VehicleId
   /** Slot-car grip feedback for HUD */
   grip: GripLevel
+  /** True after the first simulated pose write */
+  poseReady: boolean
 }
 
 /** Shared snapshot so racers can steer around each other */
@@ -366,16 +368,6 @@ export function Vehicle({
   const speedRef = speed01Ref ?? defaultSpeed01Ref
   const gripRef = useRef<GripLevel>('green')
 
-  const wrapMap = useMemo(() => {
-    if (vehicleLook !== 'wrap' || !vehicleWrap) return null
-    const loader = new THREE.TextureLoader()
-    const tex = loader.load(vehicleWrap)
-    tex.colorSpace = THREE.SRGBColorSpace
-    tex.flipY = true
-    tex.needsUpdate = true
-    return tex
-  }, [vehicleWrap, vehicleLook])
-
   const carRadius =
     vehicleId === 'truck' || vehicleId === 'ambulance'
       ? 1.1
@@ -384,17 +376,6 @@ export function Vehicle({
         : isMotorcycle(vehicleId)
           ? 0.45
           : 0.75
-  const url = AVAILABLE_VEHICLE_GLBS.has(vehicleId)
-    ? VEHICLE_URLS[vehicleId]
-    : null
-  const fallback = (
-    <FallbackVehicle
-      id={vehicleId}
-      color={vehicleColor}
-      wrapMap={wrapMap}
-      look={vehicleLook}
-    />
-  )
 
   useFrame((state, rawDelta) => {
     if (!running) return
@@ -1114,16 +1095,16 @@ export function Vehicle({
       groupRef.current.quaternion.copy(smoothQuatRef.current)
     }
 
-    stateRef.current = {
-      position: finalPos.clone(),
-      quaternion: smoothQuatRef.current.clone(),
-      forward: tangent.clone(),
-      t,
-      lap: lapRef.current,
-      lateral: clampedLateral,
-      vehicleId,
-      grip: gripRef.current,
-    }
+    const st = stateRef.current
+    st.position.copy(finalPos)
+    st.quaternion.copy(smoothQuatRef.current)
+    st.forward.copy(tangent)
+    st.t = t
+    st.lap = lapRef.current
+    st.lateral = clampedLateral
+    st.vehicleId = vehicleId
+    st.grip = gripRef.current
+    st.poseReady = true
 
     if (peersRef) {
       const slot = peersRef.current[racerIndex] ?? {
@@ -1155,20 +1136,14 @@ export function Vehicle({
 
   return (
     <group ref={groupRef}>
-      {url ? (
-        <ErrBoundary fallback={fallback}>
-          <LoadedVehicle
-            url={url}
-            id={vehicleId}
-            color={vehicleColor}
-            wrapMap={wrapMap}
-            look={vehicleLook}
-          />
-        </ErrBoundary>
-      ) : (
-        fallback
-      )}
-      {showBeacon && <CarBeacon color={beaconColor} />}
+      <RaceVehicleVisual
+        vehicleId={vehicleId}
+        vehicleLook={vehicleLook}
+        vehicleColor={vehicleColor}
+        vehicleWrap={vehicleWrap}
+        showBeacon={showBeacon}
+        beaconColor={beaconColor}
+      />
     </group>
   )
 }
@@ -1204,5 +1179,62 @@ function CarBeacon({ color }: { color: string }) {
         />
       </mesh>
     </group>
+  )
+}
+
+/** Same mesh / GLB stack used in the race — no physics. */
+export function RaceVehicleVisual({
+  vehicleId,
+  vehicleLook = 'stock',
+  vehicleColor,
+  vehicleWrap = null,
+  showBeacon = false,
+  beaconColor = '#e8b923',
+}: {
+  vehicleId: VehicleId
+  vehicleLook?: VehicleLookMode
+  vehicleColor?: string
+  vehicleWrap?: string | null
+  showBeacon?: boolean
+  beaconColor?: string
+}) {
+  const color = vehicleColor ?? VEHICLE_META[vehicleId].color
+  const wrapMap = useMemo(() => {
+    if (vehicleLook !== 'wrap' || !vehicleWrap) return null
+    const loader = new THREE.TextureLoader()
+    const tex = loader.load(vehicleWrap)
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.flipY = true
+    tex.needsUpdate = true
+    return tex
+  }, [vehicleWrap, vehicleLook])
+  const url = AVAILABLE_VEHICLE_GLBS.has(vehicleId)
+    ? VEHICLE_URLS[vehicleId]
+    : null
+  const fallback = (
+    <FallbackVehicle
+      id={vehicleId}
+      color={color}
+      wrapMap={wrapMap}
+      look={vehicleLook}
+    />
+  )
+  return (
+    <>
+      {url ? (
+        <ErrBoundary fallback={fallback}>
+          <LoadedVehicle
+            url={url}
+            id={vehicleId}
+            color={color}
+            wrapMap={wrapMap}
+            look={vehicleLook}
+          />
+        </ErrBoundary>
+      ) : (
+        fallback
+      )}
+      {showBeacon && <CarBeacon color={beaconColor} />}
+    </>
   )
 }

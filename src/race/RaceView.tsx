@@ -12,6 +12,8 @@ import { PropInstances } from './PropInstances'
 import { Vehicle, type GripLevel, type PeerSnapshot, type VehicleState } from './Vehicle'
 import { MidiSettingsPanel } from './MidiSettingsPanel'
 import { SplitChaseRig } from './SplitChaseRig'
+import { RaceBroadcastPublisher } from './RaceBroadcastPublisher'
+import { openSpectateWindow } from './raceBroadcast'
 import './RaceView.css'
 
 type CamMode = 'chase' | 'orbit' | 'split'
@@ -47,6 +49,7 @@ function emptyState(id: VehicleId): VehicleState {
     lateral: 0,
     vehicleId: id,
     grip: 'green',
+    poseReady: false,
   }
 }
 
@@ -340,7 +343,8 @@ export function RaceView() {
   const { speed01Refs, setMidiListening } = useMidiControl()
   const racers = useMemo(() => getRaceVehicles(design), [design])
   const lapCount = design.lapCount ?? 3
-  const [camMode, setCamMode] = useState<CamMode>('chase')
+  const midiEnabled = design.midiEnabled !== false
+  const [camMode, setCamMode] = useState<CamMode>('split')
   const [chaseDistance, setChaseDistance] = useState(8)
   const [chaseOrbit, setChaseOrbit] = useState(0)
   const [chaseIndex, setChaseIndex] = useState(0)
@@ -348,6 +352,10 @@ export function RaceView() {
   const [midiOpen, setMidiOpen] = useState(false)
   const closeMidi = useCallback(() => setMidiOpen(false), [])
   const toggleMidi = useCallback(() => setMidiOpen((v) => !v), [])
+  const setCam = useCallback((mode: CamMode) => {
+    setCamMode(mode)
+    setChaseOrbit(0)
+  }, [])
   const [board, setBoard] = useState<BoardRow[]>([])
   const [lastLapMs, setLastLapMs] = useState<number | null>(null)
   const [sceneReady, setSceneReady] = useState(false)
@@ -366,14 +374,9 @@ export function RaceView() {
   const canvasHostRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (camMode === 'split' && racers.length < 2) {
-      setCamMode('chase')
-    }
-  }, [camMode, racers.length])
-
-  useEffect(() => {
-    setMidiListening(design.midiEnabled !== false)
-  }, [design.midiEnabled, setMidiListening])
+    setMidiListening(midiEnabled)
+    if (!midiEnabled) setMidiOpen(false)
+  }, [midiEnabled, setMidiListening])
 
   const stateRefs = useMemo(
     () => racers.map((id) => ({ current: emptyState(id) })),
@@ -754,12 +757,12 @@ export function RaceView() {
             {chasePlace != null ? ` · P${chasePlace}` : ''}
             {design.reverseDirection ? ' · CCW' : ' · CW'}
             {` · ${lapCount} laps`}
-            {design.midiEnabled !== false ? ' · MIDI on' : ' · MIDI off'}
+            {midiEnabled ? ' · MIDI' : ''}
             {camMode === 'orbit'
               ? ' · Orbit'
               : camMode === 'split'
                 ? ` · Split · Zoom ${chaseDistance.toFixed(0)}m · drag to peek`
-                : ` · Zoom ${chaseDistance.toFixed(0)}m · drag to peek`}
+                : ` · Chase · Zoom ${chaseDistance.toFixed(0)}m · drag to peek`}
             {showBeacons ? ' · markers on' : ' · markers off'}
           </p>
           <p className="hud-times">
@@ -861,16 +864,18 @@ export function RaceView() {
           )}
         </div>
         <div className="hud-right">
-          <button
-            type="button"
-            data-midi-toggle
-            className={`hud-btn ${midiOpen ? 'on' : ''}`}
-            onClick={toggleMidi}
-            title="MIDI knobs and race speeds"
-            aria-expanded={midiOpen}
-          >
-            MIDI / Speeds
-          </button>
+          {midiEnabled && (
+            <button
+              type="button"
+              data-midi-toggle
+              className={`hud-btn ${midiOpen ? 'on' : ''}`}
+              onClick={toggleMidi}
+              title="MIDI knobs and race speeds"
+              aria-expanded={midiOpen}
+            >
+              MIDI / Speeds
+            </button>
+          )}
           <button
             type="button"
             className={`hud-btn ${showBeacons ? 'on' : ''}`}
@@ -881,25 +886,45 @@ export function RaceView() {
           </button>
           <button
             type="button"
-            className={`hud-btn ${camMode === 'split' ? 'on' : ''}`}
+            className="hud-btn"
             onClick={() => {
-              setCamMode((m) => {
-                if (m === 'chase') return racers.length > 1 ? 'split' : 'orbit'
-                if (m === 'split') return 'orbit'
-                return 'chase'
-              })
-              setChaseOrbit(0)
+              const w = openSpectateWindow()
+              if (!w) {
+                window.alert(
+                  'Pop-up blocked — allow pop-ups for this site to open the map window.',
+                )
+              }
             }}
-            title="Cycle chase → split → orbit"
+            title="Open a separate top-down course map window"
           >
-            {camMode === 'chase'
-              ? racers.length > 1
-                ? 'Split view'
-                : 'Orbit cam'
-              : camMode === 'split'
-                ? 'Orbit cam'
-                : 'Chase cam'}
+            Map window
           </button>
+          <div className="hud-cam-modes" role="group" aria-label="Camera mode">
+            {(
+              [
+                ['split', 'Split'],
+                ['chase', 'Chase'],
+                ['orbit', 'Orbit'],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                className={`hud-btn hud-cam-btn ${camMode === mode ? 'on' : ''}`}
+                aria-pressed={camMode === mode}
+                onClick={() => setCam(mode)}
+                title={
+                  mode === 'split'
+                    ? 'Split: one chase pane per car'
+                    : mode === 'chase'
+                      ? 'Chase: follow the selected car'
+                      : 'Orbit: free camera around the track'
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             className="hud-btn primary"
@@ -910,10 +935,22 @@ export function RaceView() {
         </div>
       </div>
 
-      <MidiSettingsPanel
-        open={midiOpen}
-        onClose={closeMidi}
+      {midiEnabled && (
+        <MidiSettingsPanel
+          open={midiOpen}
+          onClose={closeMidi}
+          racers={racers}
+        />
+      )}
+
+      <RaceBroadcastPublisher
+        active={sceneReady}
+        stateRefs={stateRefs}
         racers={racers}
+        board={board}
+        racing={racing}
+        countdown={countdown}
+        lapCount={lapCount}
       />
     </div>
   )
