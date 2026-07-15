@@ -375,3 +375,81 @@
   accent-color: #e8b923;
 }
 
+.race-countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at center,
+    rgba(12, 14, 16, 0.35) 0%,
+    transparent 55%
+  );
+}
+
+.race-countdown span {
+  font-family: 'Bebas Neue', Impact, sans-serif;
+  font-size: clamp(4.5rem, 18vw, 9rem);
+  letter-spacing: 0.06em;
+  color: #f4f0e8;
+  text-shadow: 0 4px 28px rgba(0, 0, 0, 0.55);
+  animation: countdown-pop 0.35s ease-out;
+}
+
+.race-countdown span.go {
+  color: #e8b923;
+}
+
+@keyframes countdown-pop {
+  from {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.race-winner-banner {
+  position: absolute;
+  top: 5.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 22;
+  pointer-events: none;
+  text-align: center;
+  padding: 0.65rem 1.25rem 0.75rem;
+  background: rgba(18, 20, 22, 0.82);
+  border: 1px solid rgba(232, 185, 35, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.race-winner-title {
+  margin: 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(244, 240, 232, 0.65);
+}
+
+.race-winner-name {
+  margin: 0.1rem 0 0;
+  font-family: 'Bebas Neue', Impact, sans-serif;
+  font-size: 1.85rem;
+  letter-spacing: 0.05em;
+  color: #e8b923;
+  line-height: 1;
+}
+
+.race-winner-sub {
+  margin: 0.25rem 0 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.72rem;
+  color: rgba(244, 240, 232, 0.7);
+}
+

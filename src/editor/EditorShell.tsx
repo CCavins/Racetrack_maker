@@ -1,6 +1,10 @@
 import { useRef } from 'react'
 import { useTrackStore } from '../state/trackStore'
-import { getRaceVehicles } from '../types'
+import {
+  MAX_LAP_COUNT,
+  MIN_LAP_COUNT,
+  getRaceVehicles,
+} from '../types'
 import { TrackCanvas } from './TrackCanvas'
 import { StickerPalette } from './StickerPalette'
 import { VehiclePicker } from './VehiclePicker'
@@ -23,6 +27,8 @@ export function EditorShell() {
     removeControlPoint,
     setSelectedPointIndex,
     toggleReverseDirection,
+    setLapCount,
+    setMidiEnabled,
     exportDesignJson,
     importDesignJson,
     setLoadStatus,
@@ -178,6 +184,32 @@ export function EditorShell() {
 
         <StickerPalette />
         <VehiclePicker />
+
+        <div className="race-settings">
+          <p className="race-settings-label">Race</p>
+          <label className="race-setting-row">
+            <span>Laps</span>
+            <input
+              type="number"
+              min={MIN_LAP_COUNT}
+              max={MAX_LAP_COUNT}
+              value={design.lapCount ?? 3}
+              onChange={(e) => setLapCount(Number(e.target.value))}
+            />
+          </label>
+          <label className="race-setting-row midi-toggle">
+            <span>MIDI speeds</span>
+            <input
+              type="checkbox"
+              checked={design.midiEnabled !== false}
+              onChange={(e) => setMidiEnabled(e.target.checked)}
+            />
+          </label>
+          <p className="race-settings-hint">
+            Cars line up side-by-side, then 3-2-1. MIDI knobs map to racer
+            slots when enabled.
+          </p>
+        </div>
 
         <div className="generate-block">
           <button

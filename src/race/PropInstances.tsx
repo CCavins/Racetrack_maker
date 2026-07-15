@@ -207,11 +207,17 @@ function puddleShape(rx: number, rz: number, seed: number, lobes = 5) {
   return s
 }
 
-function BoostDecal({ decal }: { decal: DecalPlacement }) {
+function BoostDecal({
+  decal,
+  roadWidth,
+}: {
+  decal: DecalPlacement
+  roadWidth: number
+}) {
   const glowMat = useRef<THREE.MeshStandardMaterial>(null)
   const vMat = useRef<THREE.MeshStandardMaterial>(null)
   const scale = decal.scale
-  const w = ROAD_WIDTH * 0.72 * scale
+  const w = roadWidth * 0.72 * scale
 
   useFrame((state) => {
     const pulse = 0.85 + Math.sin(state.clock.elapsedTime * 4.2) * 0.35
@@ -437,8 +443,16 @@ function OilDecal({ decal }: { decal: DecalPlacement }) {
   )
 }
 
-function DecalItem({ decal }: { decal: DecalPlacement }) {
-  if (decal.kind === 'boost') return <BoostDecal decal={decal} />
+function DecalItem({
+  decal,
+  roadWidth,
+}: {
+  decal: DecalPlacement
+  roadWidth: number
+}) {
+  if (decal.kind === 'boost') {
+    return <BoostDecal decal={decal} roadWidth={roadWidth} />
+  }
   if (decal.kind === 'water') return <WaterDecal decal={decal} />
   return <OilDecal decal={decal} />
 }
@@ -446,9 +460,11 @@ function DecalItem({ decal }: { decal: DecalPlacement }) {
 export function PropInstances({
   props,
   decals,
+  roadWidth = ROAD_WIDTH,
 }: {
   props: PropPlacement[]
   decals: DecalPlacement[]
+  roadWidth?: number
 }) {
   return (
     <group>
@@ -456,7 +472,7 @@ export function PropInstances({
         <PropItem key={`p-${i}`} prop={p} />
       ))}
       {decals.map((d, i) => (
-        <DecalItem key={`d-${i}`} decal={d} />
+        <DecalItem key={`d-${i}`} decal={d} roadWidth={roadWidth} />
       ))}
     </group>
   )

@@ -22,6 +22,7 @@ import {
   MAX_RACERS,
   STICKER_TYPES,
   VEHICLE_IDS,
+  clampLapCount,
   getRaceVehicles,
 } from '../types'
 import { createCirclePath, resnapStickersToPath } from '../lib/pathSmooth'
@@ -85,6 +86,8 @@ type TrackStore = {
   setVehicleColor: (color: string | null) => void
   setVehicleWrap: (wrap: string | null) => void
   toggleReverseDirection: () => void
+  setLapCount: (n: number) => void
+  setMidiEnabled: (on: boolean) => void
   exportDesignJson: () => string
   importDesignJson: (
     json: string,
@@ -112,6 +115,8 @@ const emptyDesign = (): TrackDesign => ({
   vehicleWrap: null,
   reverseDirection: false,
   closed: true,
+  lapCount: 3,
+  midiEnabled: true,
 })
 
 function normalizeVehicles(
@@ -213,6 +218,8 @@ function normalizeDesign(raw: Partial<TrackDesign>): TrackDesign {
     vehicleWrap: raw.vehicleWrap ?? null,
     reverseDirection: Boolean(raw.reverseDirection),
     closed: true,
+    lapCount: clampLapCount(raw.lapCount),
+    midiEnabled: raw.midiEnabled !== false,
   }
 }
 
@@ -657,6 +664,14 @@ export function TrackProvider({ children }: { children: ReactNode }) {
     setDesign((d) => ({ ...d, reverseDirection: !d.reverseDirection }))
   }, [])
 
+  const setLapCount = useCallback((n: number) => {
+    setDesign((d) => ({ ...d, lapCount: clampLapCount(n) }))
+  }, [])
+
+  const setMidiEnabled = useCallback((on: boolean) => {
+    setDesign((d) => ({ ...d, midiEnabled: on }))
+  }, [])
+
   const exportDesignJson = useCallback(() => {
     return JSON.stringify(
       {
@@ -731,6 +746,8 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       vehicleWrap: null,
       reverseDirection: false,
       closed: true,
+      lapCount: 3,
+      midiEnabled: true,
     })
     setBestLapMs(null)
     setSelectedStickerId(null)
@@ -775,6 +792,8 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       setVehicleColor,
       setVehicleWrap,
       toggleReverseDirection,
+      setLapCount,
+      setMidiEnabled,
       exportDesignJson,
       importDesignJson,
       bestLapMs,
@@ -808,6 +827,8 @@ export function TrackProvider({ children }: { children: ReactNode }) {
       setVehicleColor,
       setVehicleWrap,
       toggleReverseDirection,
+      setLapCount,
+      setMidiEnabled,
       exportDesignJson,
       importDesignJson,
       bestLapMs,

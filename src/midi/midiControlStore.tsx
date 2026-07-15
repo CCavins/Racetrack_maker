@@ -51,6 +51,9 @@ type MidiControlContextValue = {
   deviceName: string | null
   midiReady: boolean
   midiError: string | null
+  /** When false, ignore incoming CC (sliders still work) */
+  midiListening: boolean
+  setMidiListening: (on: boolean) => void
   /** Mutable refs for the race loop (no re-render per CC) */
   speed01Refs: React.MutableRefObject<number>[]
   setSpeed: (slot: number, value01: number) => void
@@ -83,6 +86,9 @@ export function MidiControlProvider({ children }: { children: ReactNode }) {
   const [deviceName, setDeviceName] = useState<string | null>(null)
   const [midiReady, setMidiReady] = useState(false)
   const [midiError, setMidiError] = useState<string | null>(null)
+  const [midiListening, setMidiListening] = useState(true)
+  const midiListeningRef = useRef(true)
+  midiListeningRef.current = midiListening
 
   const speed01Refs = useMemo(
     () =>
@@ -198,6 +204,8 @@ export function MidiControlProvider({ children }: { children: ReactNode }) {
         return true
       }
 
+      if (!midiListeningRef.current) return false
+
       const slot = findSlotForCc(bindingsRef.current, channel, cc)
       if (slot < 0) return false
       const v = normalizeCc(value)
@@ -206,7 +214,6 @@ export function MidiControlProvider({ children }: { children: ReactNode }) {
         if (Math.abs((prev[slot] ?? 0) - v) < 0.002) return prev
         const next = [...prev]
         next[slot] = v
-        // Persist occasionally — throttle via comparing
         persist(bindingsRef.current, next)
         return next
       })
@@ -239,6 +246,8 @@ export function MidiControlProvider({ children }: { children: ReactNode }) {
       deviceName,
       midiReady,
       midiError,
+      midiListening,
+      setMidiListening,
       speed01Refs,
       setSpeed,
       setBinding,
@@ -253,6 +262,7 @@ export function MidiControlProvider({ children }: { children: ReactNode }) {
       deviceName,
       midiReady,
       midiError,
+      midiListening,
       speed01Refs,
       setSpeed,
       setBinding,

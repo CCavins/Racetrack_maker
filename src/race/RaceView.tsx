@@ -12,8 +12,18 @@ import { Vehicle, type PeerSnapshot, type VehicleState } from './Vehicle'
 import { MidiSettingsPanel } from './MidiSettingsPanel'
 import './RaceView.css'
 
-const START_LATERAL = [-0.12, 0.08, -0.06, 0.1]
-const START_T = [0, 0.014, 0.028, 0.042]
+const START_T = 0
+
+/** Side-by-side grid across the start line (same t, spaced lateral) */
+function startLateralFor(
+  index: number,
+  count: number,
+  roadWidth: number,
+): number {
+  if (count <= 1) return 0
+  const span = (roadWidth / 2) * 0.78
+  return -span / 2 + (span * index) / (count - 1)
+}
 
 /** Distinct marker colors for up to 4 racers (beacon + leaderboard) */
 export const RACER_MARKER_COLORS = [
@@ -55,11 +65,14 @@ function SceneContent({
   chaseIndex,
   showBeacons,
   onLap,
+  onFinished,
   stateRefs,
   peersRef,
   speed01Refs,
   racers,
   running,
+  motionEnabled,
+  lapCount,
   onReady,
 }: {
   chaseCam: boolean
@@ -68,11 +81,14 @@ function SceneContent({
   chaseIndex: number
   showBeacons: boolean
   onLap: (n: number, vehicleId: VehicleId) => void
+  onFinished: (vehicleId: VehicleId) => void
   stateRefs: React.MutableRefObject<VehicleState>[]
   peersRef: React.MutableRefObject<PeerSnapshot[]>
   speed01Refs: React.MutableRefObject<number>[]
   racers: VehicleId[]
   running: boolean
+  motionEnabled: boolean
+  lapCount: number
   onReady: () => void
 }) {
   const { design } = useTrackStore()
@@ -118,7 +134,11 @@ function SceneContent({
       </mesh>
 
       <TrackMesh track={track} />
-      <PropInstances props={track.props} decals={track.decals} />
+      <PropInstances
+        props={track.props}
+        decals={track.decals}
+        roadWidth={track.roadWidth}
+      />
 
       {racers.map((id, i) => {
         const focused = design.vehicle === id
@@ -144,13 +164,16 @@ function SceneContent({
             showBeacon={showBeacons}
             beaconColor={RACER_MARKER_COLORS[i] ?? RACER_MARKER_COLORS[0]}
             running={running}
+            motionEnabled={motionEnabled}
+            lapCount={lapCount}
             stateRef={stateRefs[i]}
             racerIndex={i}
             peersRef={peersRef}
-            startT={START_T[i] ?? i * 0.012}
-            startLateral={START_LATERAL[i] ?? 0}
+            startT={START_T}
+            startLateral={startLateralFor(i, racers.length, track.roadWidth)}
             speed01Ref={speed01Refs[i]}
             onLap={onLap}
+            onFinished={onFinished}
           />
         )
       })}
@@ -288,8 +311,9 @@ type BoardRow = {
 export function RaceView() {
   const { design, setStep, bestLapMs, recordLapTime, setLoadStatus } =
     useTrackStore()
-  const { speed01Refs } = useMidiControl()
+  const { speed01Refs, setMidiListening } = useMidiControl()
   const racers = useMemo(() => getRaceVehicles(design), [design])
+  const lapCount = design.lapCount ?? 3
   const [chaseCam, setChaseCam] = useState(true)
   const [chaseDistance, setChaseDistance] = useState(8)
   const [chaseOrbit, setChaseOrbit] = useState(0)
@@ -299,11 +323,20 @@ export function RaceView() {
   const [board, setBoard] = useState<BoardRow[]>([])
   const [lastLapMs, setLastLapMs] = useState<number | null>(null)
   const [sceneReady, setSceneReady] = useState(false)
+  /** null = not started; number = 3/2/1; 'go' = GO flash; 'racing' | 'done' */
+  const [countdown, setCountdown] = useState<number | 'go' | null>(null)
+  const [racing, setRacing] = useState(false)
+  const [winnerId, setWinnerId] = useState<VehicleId | null>(null)
+  const [finishedIds, setFinishedIds] = useState<VehicleId[]>([])
   const lapStartRef = useRef(performance.now())
   const dragRef = useRef<{ x: number; orbit: number } | null>(null)
   const chaseOrbitRef = useRef(0)
   chaseOrbitRef.current = chaseOrbit
   const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setMidiListening(design.midiEnabled !== false)
+  }, [design.midiEnabled, setMidiListening])
 
   const stateRefs = useMemo(
     () => racers.map((id) => ({ current: emptyState(id) })),
@@ -330,6 +363,11 @@ export function RaceView() {
     }))
     setChaseIndex(0)
     setBoard([])
+    setFinishedIds([])
+    setWinnerId(null)
+    setRacing(false)
+    setCountdown(null)
+    setSceneReady(false)
   }, [racers.join('|')])
 
   useEffect(() => {
@@ -339,22 +377,55 @@ export function RaceView() {
   const markReady = useCallback(() => {
     setSceneReady(true)
     setLoadStatus(null)
-    lapStartRef.current = performance.now()
   }, [setLoadStatus])
+
+  // 3-2-1-GO after the scene is ready
+  useEffect(() => {
+    if (!sceneReady) return
+    let cancelled = false
+    const sleep = (ms: number) =>
+      new Promise<void>((r) => window.setTimeout(r, ms))
+    ;(async () => {
+      for (const n of [3, 2, 1] as const) {
+        if (cancelled) return
+        setCountdown(n)
+        await sleep(900)
+      }
+      if (cancelled) return
+      setCountdown('go')
+      await sleep(550)
+      if (cancelled) return
+      setCountdown(null)
+      setRacing(true)
+      lapStartRef.current = performance.now()
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [sceneReady])
 
   const onLap = useCallback(
     (n: number, vehicleId: VehicleId) => {
       const now = performance.now()
       const ms = now - lapStartRef.current
-      // Per-field last/best from any car crossing
       if (n > 0) {
         setLastLapMs(ms)
         recordLapTime(ms)
+        lapStartRef.current = now
       }
       void vehicleId
     },
     [recordLapTime],
   )
+
+  const onFinished = useCallback((vehicleId: VehicleId) => {
+    setFinishedIds((prev) => {
+      if (prev.includes(vehicleId)) return prev
+      const next = [...prev, vehicleId]
+      if (prev.length === 0) setWinnerId(vehicleId)
+      return next
+    })
+  }, [])
 
   // Poll leaderboard from shared state refs (~8 Hz)
   useEffect(() => {
@@ -369,7 +440,12 @@ export function RaceView() {
           const s = stateRefs[index]?.current
           const lap = s?.lap ?? 0
           const t = s?.t ?? 0
-          const progress = reverse ? lap + (1 - t) : lap + t
+          const done = finishedIds.includes(id)
+          const progress = done
+            ? lapCount + 1
+            : reverse
+              ? lap + (1 - t)
+              : lap + t
           return {
             index,
             id,
@@ -390,7 +466,14 @@ export function RaceView() {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [sceneReady, racers, stateRefs, design.reverseDirection])
+  }, [
+    sceneReady,
+    racers,
+    stateRefs,
+    design.reverseDirection,
+    finishedIds,
+    lapCount,
+  ])
 
   useEffect(() => {
     if (!sceneReady) setLoadStatus('Rendering scene…')
@@ -470,11 +553,14 @@ export function RaceView() {
             chaseIndex={chaseIndex}
             showBeacons={showBeacons}
             onLap={onLap}
+            onFinished={onFinished}
             stateRefs={stateRefs}
             peersRef={peersRef}
             speed01Refs={speed01Refs}
             racers={racers}
             running={sceneReady}
+            motionEnabled={racing}
+            lapCount={lapCount}
             onReady={markReady}
           />
         </Suspense>
@@ -494,6 +580,24 @@ export function RaceView() {
         </div>
       )}
 
+      {sceneReady && countdown != null && (
+        <div className="race-countdown" aria-live="assertive">
+          <span className={countdown === 'go' ? 'go' : ''}>
+            {countdown === 'go' ? 'GO' : countdown}
+          </span>
+        </div>
+      )}
+
+      {winnerId && (
+        <div className="race-winner-banner">
+          <p className="race-winner-title">Winner</p>
+          <p className="race-winner-name">{VEHICLE_META[winnerId].label}</p>
+          <p className="race-winner-sub">
+            {finishedIds.length}/{racers.length} finished · {lapCount} laps
+          </p>
+        </div>
+      )}
+
       <CarEdgeHint active={!chaseCam && sceneReady} />
 
       <div className="race-hud">
@@ -503,6 +607,8 @@ export function RaceView() {
             Chase {chaseLabel}
             {chasePlace != null ? ` · P${chasePlace}` : ''}
             {design.reverseDirection ? ' · CCW' : ' · CW'}
+            {` · ${lapCount} laps`}
+            {design.midiEnabled !== false ? ' · MIDI on' : ' · MIDI off'}
             {chaseCam
               ? ` · Zoom ${chaseDistance.toFixed(0)}m · drag to peek`
               : ' · Orbit'}
@@ -518,6 +624,10 @@ export function RaceView() {
               {board.map((row) => {
                 const marker =
                   RACER_MARKER_COLORS[row.index] ?? RACER_MARKER_COLORS[0]
+                const done = finishedIds.includes(row.id)
+                const lapLabel = done
+                  ? 'Done'
+                  : `${Math.min(row.lap + 1, lapCount)}/${lapCount}`
                 return (
                   <li
                     key={`${row.id}-${row.index}`}
@@ -541,7 +651,7 @@ export function RaceView() {
                       />
                       <span className="hud-place">P{row.place}</span>
                       <span className="hud-racer">{row.label}</span>
-                      <span className="hud-lap">L{row.lap + 1}</span>
+                      <span className="hud-lap">{lapLabel}</span>
                     </button>
                   </li>
                 )

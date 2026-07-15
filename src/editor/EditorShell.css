@@ -133,6 +133,57 @@
   text-align: center;
 }
 
+.race-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.65rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.race-settings-label {
+  margin: 0;
+  font-family: 'Bebas Neue', Impact, sans-serif;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  color: #f4f0e8;
+}
+
+.race-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.72rem;
+  color: #c8c4bc;
+}
+
+.race-setting-row input[type='number'] {
+  width: 3.4rem;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.25);
+  color: #f4f0e8;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.75rem;
+}
+
+.race-setting-row input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #e8b923;
+}
+
+.race-settings-hint {
+  margin: 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  color: #7a766e;
+}
+
 .editor-main {
   flex: 1;
   min-width: 0;

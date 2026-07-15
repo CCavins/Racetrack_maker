@@ -76,6 +76,19 @@ export type TrackDesign = {
   /** When true, race runs counter-clockwise (decreasing t) */
   reverseDirection: boolean
   closed: boolean
+  /** How many full laps to complete (1–20) */
+  lapCount: number
+  /** When true, MIDI knobs drive per-slot race speeds */
+  midiEnabled: boolean
+}
+
+export const DEFAULT_LAP_COUNT = 3
+export const MIN_LAP_COUNT = 1
+export const MAX_LAP_COUNT = 20
+
+export function clampLapCount(n: unknown): number {
+  const v = typeof n === 'number' ? Math.round(n) : DEFAULT_LAP_COUNT
+  return Math.min(MAX_LAP_COUNT, Math.max(MIN_LAP_COUNT, Number.isFinite(v) ? v : DEFAULT_LAP_COUNT))
 }
 
 /** Resolve the race lineup from a design (supports legacy singular-only saves). */

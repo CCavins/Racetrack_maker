@@ -9,7 +9,6 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import type { Track3D } from '../lib/buildTrack3D'
-import { ROAD_WIDTH } from '../lib/buildTrack3D'
 import {
   VEHICLE_META,
   isMotorcycle,
@@ -257,17 +256,22 @@ type Props = {
   beaconColor?: string
   /** When false, hold still until assets / scene are ready */
   running?: boolean
+  /** When false, stay posed but do not integrate (countdown) */
+  motionEnabled?: boolean
+  /** Full laps to complete before finishing */
+  lapCount?: number
   stateRef: MutableRefObject<VehicleState>
   /** Index into peersRef for this racer */
   racerIndex?: number
   peersRef?: MutableRefObject<PeerSnapshot[]>
-  /** Starting progress along the lap (stagger grid) */
+  /** Starting progress along the lap */
   startT?: number
   /** Starting lateral lane offset */
   startLateral?: number
   /** Normalized MIDI/slider speed 0–1 for this lineup slot */
   speed01Ref?: MutableRefObject<number>
   onLap?: (lap: number, vehicleId: VehicleId) => void
+  onFinished?: (vehicleId: VehicleId) => void
 }
 
 export function Vehicle({
@@ -283,6 +287,8 @@ export function Vehicle({
   showBeacon,
   beaconColor = '#e8b923',
   running = true,
+  motionEnabled = true,
+  lapCount = 3,
   stateRef,
   racerIndex = 0,
   peersRef,
@@ -290,6 +296,7 @@ export function Vehicle({
   startLateral = 0,
   speed01Ref,
   onLap,
+  onFinished,
 }: Props) {
   const groupRef = useRef<THREE.Group>(null)
   const tRef = useRef(startT)
@@ -331,6 +338,7 @@ export function Vehicle({
   const cornerDriftRef = useRef(0)
   /** Seconds before another corner spin-out can fire */
   const spinCooldownRef = useRef(0)
+  const finishedRef = useRef(false)
   const defaultSpeed01Ref = useRef(0.5)
   const speedRef = speed01Ref ?? defaultSpeed01Ref
 
@@ -369,6 +377,9 @@ export function Vehicle({
     const delta = Math.min(rawDelta, 1 / 28)
     const curve = track.curve
     const len = Math.max(track.length, 1)
+    const canMove = motionEnabled && !finishedRef.current
+    const asphaltHalf = track.roadWidth / 2
+    const lateralLimit = asphaltHalf + 1.1
 
     if (boostRef.current > 0) boostRef.current = Math.max(0, boostRef.current - delta)
     if (hitSlowRef.current > 0) hitSlowRef.current = Math.max(0, hitSlowRef.current - delta)
@@ -376,6 +387,9 @@ export function Vehicle({
     if (shakeRef.current > 0) shakeRef.current = Math.max(0, shakeRef.current - delta)
     if (waterCooldownRef.current > 0) {
       waterCooldownRef.current = Math.max(0, waterCooldownRef.current - delta)
+    }
+    if (spinCooldownRef.current > 0) {
+      spinCooldownRef.current = Math.max(0, spinCooldownRef.current - delta)
     }
     hitSpinRef.current *= Math.pow(0.82, delta * 60)
     hitLatVelRef.current *= Math.pow(0.86, delta * 60)
@@ -386,27 +400,28 @@ export function Vehicle({
     // Decal effects (boost / oil / water) by world proximity
     let onOil = false
     let onWater = false
-    for (const d of track.decals) {
-      const dist = lookAhead.distanceTo(d.position)
-      const reach = d.kind === 'boost' ? 2.6 : d.kind === 'oil' ? 2.2 : 2.0
-      if (dist < reach * d.scale) {
-        if (d.kind === 'boost') {
-          // Fresh boost pad hit → motorcycle pops a wheelie
-          if (
-            isMotorcycle(vehicleId) &&
-            boostRef.current < 0.2 &&
-            wheelieTRef.current < 0
-          ) {
-            wheelieTRef.current = 0
+    if (canMove) {
+      for (const d of track.decals) {
+        const dist = lookAhead.distanceTo(d.position)
+        const reach = d.kind === 'boost' ? 2.6 : d.kind === 'oil' ? 2.2 : 2.0
+        if (dist < reach * d.scale) {
+          if (d.kind === 'boost') {
+            if (
+              isMotorcycle(vehicleId) &&
+              boostRef.current < 0.2 &&
+              wheelieTRef.current < 0
+            ) {
+              wheelieTRef.current = 0
+            }
+            boostRef.current = Math.max(boostRef.current, 1.4)
           }
-          boostRef.current = Math.max(boostRef.current, 1.4)
-        }
-        if (d.kind === 'oil') {
-          onOil = true
-          oilSpinRef.current = Math.max(oilSpinRef.current, 1.45)
-        }
-        if (d.kind === 'water') {
-          onWater = true
+          if (d.kind === 'oil') {
+            onOil = true
+            oilSpinRef.current = Math.max(oilSpinRef.current, 1.45)
+          }
+          if (d.kind === 'water') {
+            onWater = true
+          }
         }
       }
     }
@@ -476,7 +491,7 @@ export function Vehicle({
         7,
         delta,
       )
-      const maxSlide = ASPHALT_HALF - 0.35
+      const maxSlide = asphaltHalf - 0.35
       if (Math.abs(waterLatRef.current) > maxSlide) {
         waterLatRef.current = Math.sign(waterLatRef.current) * maxSlide
         waterVelRef.current *= 0.3
@@ -522,7 +537,7 @@ export function Vehicle({
 
       const urgency = 1 - dt / lookWindow
       const clearance = Math.min(
-        ASPHALT_HALF - 0.4,
+        asphaltHalf - 0.4,
         obs.radius + carRadius + 0.5,
       )
       avoidTarget += sidePref * clearance * urgency
@@ -568,7 +583,7 @@ export function Vehicle({
               }
               passSideRef.current = side
             }
-            const passLane = side * Math.min(ASPHALT_HALF - 0.35, needSep * 0.9)
+            const passLane = side * Math.min(asphaltHalf - 0.35, needSep * 0.9)
             const desire = passLane * (0.35 + along * 0.65)
             if (Math.abs(desire) > Math.abs(strongestPass)) {
               strongestPass = desire
@@ -589,7 +604,7 @@ export function Vehicle({
               : -Math.sign(latGap || 1)
           passSideRef.current = side
           const overlap = (needSep - absLat) / needSep
-          const desire = side * Math.min(ASPHALT_HALF - 0.4, needSep * 0.75) * overlap
+          const desire = side * Math.min(asphaltHalf - 0.4, needSep * 0.75) * overlap
           if (Math.abs(desire) > Math.abs(strongestPass)) {
             strongestPass = desire
           }
@@ -606,7 +621,7 @@ export function Vehicle({
     }
 
     // Prefer center while spinning / on grass so recovery pulls back on course
-    const onGrassHint = Math.abs(lateralOutRef.current) > ASPHALT_HALF
+    const onGrassHint = Math.abs(lateralOutRef.current) > asphaltHalf
     const recovering = oilSpinRef.current > 0 || onGrassHint
     if (recovering && Math.abs(strongestPass) < 0.2) {
       avoidTarget *= 0.25
@@ -621,8 +636,8 @@ export function Vehicle({
 
     avoidTarget = THREE.MathUtils.clamp(
       avoidTarget,
-      -ASPHALT_HALF + 0.25,
-      ASPHALT_HALF - 0.25,
+      -asphaltHalf + 0.25,
+      asphaltHalf - 0.25,
     )
     // Snappier when dodging; softer when returning to center; stronger recover pull
     const avoidRate = recovering
@@ -637,18 +652,14 @@ export function Vehicle({
       delta,
     )
 
-    if (spinCooldownRef.current > 0) {
-      spinCooldownRef.current = Math.max(0, spinCooldownRef.current - delta)
-    }
-
     const onOilSpin = oilSpinRef.current > 0
 
     // Shared MIDI / slider pace — equal capability across vehicle models
     const baseSpeed = speed01ToBase(speedRef.current)
 
-    // Curvature from nearby tangents (|cross| ≈ turn angle over ~1.6% of lap)
-    const tA = (tNow - 0.008 + 1) % 1
-    const tB = (tNow + 0.008) % 1
+    // Turn sharpness from angle between nearby tangents (0 = straight, ~1 = hairpin)
+    const tA = (tNow - 0.01 + 1) % 1
+    const tB = (tNow + 0.01) % 1
     const tanA = curve.getTangentAt(tA).clone()
     const tanB = curve.getTangentAt(tB).clone()
     tanA.y = 0
@@ -656,7 +667,9 @@ export function Vehicle({
     if (tanA.lengthSq() > 1e-8) tanA.normalize()
     if (tanB.lengthSq() > 1e-8) tanB.normalize()
     const turnSigned = tanA.x * tanB.z - tanA.z * tanB.x
-    const curvature = Math.abs(turnSigned)
+    const turnDot = THREE.MathUtils.clamp(tanA.dot(tanB), -1, 1)
+    const turnAngle = Math.acos(turnDot) // radians over ~2% of lap
+    const turnFactor = THREE.MathUtils.smoothstep(0.04, 0.55, turnAngle)
 
     const provisionalMul =
       (1 + boostRef.current * 0.85) *
@@ -665,63 +678,56 @@ export function Vehicle({
       (1 - peerSlowRef.current)
     const provisionalSpeed = baseSpeed * provisionalMul
 
-    // Scale matches tangent-cross curvature (~0.05–0.6). Mid MIDI (~0.12)
-    // holds typical bends; only very high speed + tight turns drift off.
-    const GRIP = 0.055
-    const limit = GRIP / Math.max(curvature, 0.04)
-    const overspeed = Math.max(0, provisionalSpeed - limit)
+    // Max safe progress-speed for this bend: straights allow full MIDI; hairpins ~0.08
+    const maxSafe = THREE.MathUtils.lerp(0.3, 0.075, turnFactor)
+    const ratio = provisionalSpeed / Math.max(maxSafe, 0.04)
     const outward = Math.sign(turnSigned || 1) * (reverseDirection ? -1 : 1)
 
-    if (
-      overspeed > 0.01 &&
-      curvature > 0.06 &&
-      oilSpinRef.current <= 0 &&
-      spinCooldownRef.current <= 0
-    ) {
-      // Soft drift onto / past asphalt — not an instant spin
-      const push = overspeed * 1.1 * delta * 60
-      cornerDriftRef.current += outward * push
+    if (canMove && ratio > 1.08 && oilSpinRef.current <= 0) {
+      // Excess speed² pushes outward — soft grass first, then spin if far off
+      const excess = ratio - 1
+      cornerDriftRef.current += outward * excess * excess * 0.75 * delta * 60
     } else if (oilSpinRef.current <= 0) {
       cornerDriftRef.current = THREE.MathUtils.damp(
         cornerDriftRef.current,
         0,
-        recovering ? 3.2 : 2.0,
+        recovering ? 3.4 : 2.2,
         delta,
       )
     }
 
-    // Spin only once you're actually off the asphalt (or deep into grass)
-    const farOff = Math.abs(lateralOutRef.current) > ASPHALT_HALF + 0.45
+    const absLatNow = Math.abs(lateralOutRef.current)
+    const farOff = absLatNow > asphaltHalf + 0.4
     if (
+      canMove &&
       farOff &&
+      ratio > 1.15 &&
       oilSpinRef.current <= 0 &&
-      spinCooldownRef.current <= 0 &&
-      overspeed > 0.02
+      spinCooldownRef.current <= 0
     ) {
-      oilSpinRef.current = 1.45
-      spinCooldownRef.current = 2.8
+      oilSpinRef.current = 1.35
+      spinCooldownRef.current = 3.0
     }
 
     if (oilSpinRef.current > 0) {
+      // Bleed drift while spinning; pull toward asphalt edge after
       cornerDriftRef.current = THREE.MathUtils.damp(
         cornerDriftRef.current,
-        0,
-        2.4,
+        Math.sign(cornerDriftRef.current || outward) * asphaltHalf * 0.85,
+        2.2,
         delta,
       )
     }
     cornerDriftRef.current = THREE.MathUtils.clamp(
       cornerDriftRef.current,
-      -LATERAL_LIMIT + 0.2,
-      LATERAL_LIMIT - 0.2,
+      -lateralLimit + 0.2,
+      lateralLimit - 0.2,
     )
 
-    const onGrass =
-      Math.abs(lateralOutRef.current) > ASPHALT_HALF ||
-      Math.abs(avoidLatRef.current + cornerDriftRef.current) > ASPHALT_HALF
+    const onGrass = absLatNow > asphaltHalf
 
     const speedMul =
-      provisionalMul * (onGrass ? 0.35 : 1)
+      (canMove ? provisionalMul : 0) * (onGrass ? 0.35 : 1)
     const dt =
       ((reverseDirection ? -1 : 1) * baseSpeed * speedMul * delta * 60) / len
     const prevT = tRef.current
@@ -729,9 +735,15 @@ export function Vehicle({
 
     const crossedForward = !reverseDirection && tRef.current < prevT
     const crossedReverse = reverseDirection && tRef.current > prevT + 0.5
-    if (crossedForward || crossedReverse) {
+    if (canMove && (crossedForward || crossedReverse)) {
       lapRef.current += 1
       onLap?.(lapRef.current, vehicleId)
+      if (lapRef.current >= lapCount && !finishedRef.current) {
+        finishedRef.current = true
+        // Snap just past the line so we don't re-cross
+        tRef.current = reverseDirection ? 0.995 : 0.005
+        onFinished?.(vehicleId)
+      }
     }
 
     const t = tRef.current
@@ -768,10 +780,10 @@ export function Vehicle({
       Math.sin(state.clock.elapsedTime * 6 + weaveRef.current * 8) *
       Math.min(0.9, weaveRef.current * 0.5)
 
-    // Oil slide: sideways drift while the body spins
+    // Oil slide: mild sideways wobble while spinning (keep recoverable)
     const oilSlide = onOilSpin
-      ? Math.sin(oilAngleRef.current) * 1.15 +
-        Math.cos(oilAngleRef.current * 0.5) * 0.45
+      ? Math.sin(oilAngleRef.current) * 0.55 +
+        Math.cos(oilAngleRef.current * 0.5) * 0.2
       : 0
 
     const lateral =
@@ -784,8 +796,8 @@ export function Vehicle({
 
     const clampedLateral = THREE.MathUtils.clamp(
       lateral,
-      -LATERAL_LIMIT + 0.15,
-      LATERAL_LIMIT - 0.15,
+      -lateralLimit + 0.15,
+      lateralLimit - 0.15,
     )
     lateralOutRef.current = clampedLateral
 
@@ -1032,11 +1044,6 @@ export function Vehicle({
     </group>
   )
 }
-
-/** Half-width of asphalt ribbon (matches ROAD_WIDTH / 2) */
-const ASPHALT_HALF = ROAD_WIDTH / 2
-/** Soft limit so cars can leave the ribbon onto grass but not fly away */
-const LATERAL_LIMIT = 3.2
 
 function CarBeacon({ color }: { color: string }) {
   return (

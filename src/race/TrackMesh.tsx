@@ -1,11 +1,12 @@
 import { useMemo } from 'react'
 import * as THREE from 'three'
-import { buildRoadGeometry, ROAD_WIDTH, type Track3D } from '../lib/buildTrack3D'
+import { buildRoadGeometry, type Track3D } from '../lib/buildTrack3D'
 
 export function TrackMesh({ track }: { track: Track3D }) {
+  const width = track.roadWidth
   const geometry = useMemo(
-    () => buildRoadGeometry(track.curve, ROAD_WIDTH, 256),
-    [track],
+    () => buildRoadGeometry(track.curve, width, 256),
+    [track, width],
   )
 
   const centerLine = useMemo(() => {
@@ -54,7 +55,7 @@ export function TrackMesh({ track }: { track: Track3D }) {
       {/* Start / finish stripe across the road at t = 0 */}
       <group position={startPose.position} rotation={[0, startPose.yaw, 0]}>
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[ROAD_WIDTH * 0.92, 0.42]} />
+          <planeGeometry args={[width * 0.92, 0.42]} />
           <meshStandardMaterial
             color="#f5f5f5"
             emissive="#ffffff"

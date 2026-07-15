@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { smoothClosedPath } from './pathSmooth'
 import {
+  getRaceVehicles,
   isCollidable,
   snapsToTrack,
   type Sticker,
@@ -8,8 +9,16 @@ import {
   type Vec2,
 } from '../types'
 
+/** Default road width for 1–2 racers */
 export const ROAD_WIDTH = 4.2
 export const WORLD_SCALE = 0.05 // canvas px → world units
+
+/** Widen the ribbon so 3–4 cars can grid and pass */
+export function roadWidthForRacers(count: number): number {
+  if (count >= 4) return 6.2
+  if (count >= 3) return 5.4
+  return ROAD_WIDTH
+}
 
 export type DecalKind = 'oil' | 'water' | 'boost'
 
@@ -45,6 +54,8 @@ export type Track3D = {
   obstacles: Obstacle[]
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
   length: number
+  /** Asphalt ribbon width (scales with racer count) */
+  roadWidth: number
 }
 
 function canvasToWorld(p: Vec2, cx: number, cy: number): THREE.Vector3 {
@@ -233,6 +244,7 @@ export function buildTrack3D(design: TrackDesign): Track3D | null {
     },
   )
   const length = curve.getLength()
+  const roadWidth = roadWidthForRacers(getRaceVehicles(design).length)
 
   const props: PropPlacement[] = []
   const decals: DecalPlacement[] = []
@@ -308,6 +320,7 @@ export function buildTrack3D(design: TrackDesign): Track3D | null {
     obstacles,
     bounds: { minX, maxX, minZ, maxZ },
     length,
+    roadWidth,
   }
 }
 
