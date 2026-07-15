@@ -518,163 +518,10 @@ export function Vehicle({
       oilAngleRef.current = THREE.MathUtils.damp(a, 0, 6, delta)
     }
 
-    // Prefer centerline; only ease aside for obstacles / cars ahead, then return.
-    // During countdown (!canMove), freeze grid lanes — do not pull to center.
-    let avoidTarget = 0
-    let peerSlow = 0
-    let strongestPass = 0
-    let passing = false
-
-    if (canMove) {
-    const lookWindow = 0.09
-    for (const obs of track.obstacles) {
-      let dt = obs.t - tNow
-      if (dt < -0.5) dt += 1
-      if (dt > 0.5) dt -= 1
-      if (reverseDirection) dt = -dt
-      if (dt < -0.01 || dt > lookWindow) continue
-
-      const sidePref =
-        Math.abs(obs.lateral) < 0.15
-          ? obs.position.x * 0.37 + obs.position.z * 0.71 >= 0
-            ? 1
-            : -1
-          : -Math.sign(obs.lateral)
-
-      const urgency = 1 - dt / lookWindow
-      const clearance = Math.min(
-        asphaltHalf - 0.4,
-        obs.radius + carRadius + 0.5,
-      )
-      avoidTarget += sidePref * clearance * urgency
-    }
-
-    // Peer overtaking: swing out around the car ahead, then settle back to center
-    const peers = peersRef?.current
-    if (peers) {
-      const myLat = lateralOutRef.current
-      const passLook = 0.085
-      for (let i = 0; i < peers.length; i++) {
-        if (i === racerIndex) continue
-        const peer = peers[i]
-        if (!peer?.active) continue
-
-        let dProg = peer.lap - lapRef.current + (peer.t - tNow)
-        if (reverseDirection) dProg = -dProg
-        if (dProg > 0.5) dProg -= 1
-        if (dProg < -0.5) dProg += 1
-
-        const latGap = peer.lateral - myLat
-        const absLat = Math.abs(latGap)
-        const needSep = carRadius + peer.radius + 0.65
-
-        // Car ahead close enough that centerline is blocked → pass
-        if (dProg > 0.004 && dProg < passLook) {
-          const along = 1 - dProg / passLook
-          const blocking = absLat < needSep * 0.95
-          if (blocking || Math.abs(peer.lateral) < 0.55) {
-            passing = true
-            let side = passSideRef.current
-            if (side === 0) {
-              // Go to the open side of the car ahead; fall back to stable index side
-              if (Math.abs(peer.lateral) > 0.18) {
-                side = -Math.sign(peer.lateral)
-              } else if (Math.abs(myLat) > 0.12) {
-                side = Math.sign(myLat)
-              } else {
-                side = racerIndex % 2 === 0 ? 1 : -1
-              }
-              passSideRef.current = side
-            }
-            const passLane = side * Math.min(asphaltHalf - 0.35, needSep * 0.9)
-            const desire = passLane * (0.35 + along * 0.65)
-            if (Math.abs(desire) > Math.abs(strongestPass)) {
-              strongestPass = desire
-            }
-            // Only lift off if still boxed in on the same line
-            if (absLat < needSep * 0.45) {
-              peerSlow = Math.max(peerSlow, along * 0.18)
-            }
-          }
-        }
-
-        // Side-by-side overlap — nudge apart without abandoning center forever
-        if (Math.abs(dProg) < 0.028 && absLat < needSep * 0.85) {
-          passing = true
-          const side =
-            absLat < 0.08
-              ? passSideRef.current || (racerIndex % 2 === 0 ? 1 : -1)
-              : -Math.sign(latGap || 1)
-          passSideRef.current = side
-          const overlap = (needSep - absLat) / needSep
-          const desire = side * Math.min(asphaltHalf - 0.4, needSep * 0.75) * overlap
-          if (Math.abs(desire) > Math.abs(strongestPass)) {
-            strongestPass = desire
-          }
-        }
-      }
-    }
-    if (!passing) passSideRef.current = 0
-    if (Math.abs(strongestPass) > 0.01) {
-      // Prefer the pass lane while still respecting obstacle dodge
-      avoidTarget =
-        Math.abs(strongestPass) >= Math.abs(avoidTarget)
-          ? strongestPass
-          : avoidTarget + strongestPass * 0.35
-    }
-
-    // Prefer center while spinning / on grass so recovery pulls back on course
-    const onGrassHint = Math.abs(lateralOutRef.current) > asphaltHalf
-    const recoveringSteer = oilSpinRef.current > 0 || onGrassHint
-    if (recoveringSteer && Math.abs(strongestPass) < 0.2) {
-      avoidTarget *= 0.25
-    }
-
-    peerSlowRef.current = THREE.MathUtils.damp(
-      peerSlowRef.current,
-      peerSlow,
-      4,
-      delta,
-    )
-
-    avoidTarget = THREE.MathUtils.clamp(
-      avoidTarget,
-      -asphaltHalf + 0.25,
-      asphaltHalf - 0.25,
-    )
-    // Snappier when dodging; softer when returning to center; stronger recover pull
-    const avoidRate = recoveringSteer
-      ? 4.2
-      : Math.abs(avoidTarget) > 0.2
-        ? 3.4
-        : 2.4
-    avoidLatRef.current = THREE.MathUtils.damp(
-      avoidLatRef.current,
-      avoidTarget,
-      avoidRate,
-      delta,
-    )
-    } else {
-      avoidLatRef.current = startLateral
-      cornerDriftRef.current = 0
-      peerSlowRef.current = 0
-      passSideRef.current = 0
-      oilSpinRef.current = 0
-      oilAngleRef.current = 0
-      waterLatRef.current = 0
-      hitLatVelRef.current = 0
-    }
-
-    const onOilSpin = oilSpinRef.current > 0
-    const recovering =
-      onOilSpin || Math.abs(lateralOutRef.current) > asphaltHalf
-
-    // Shared MIDI / slider pace — equal capability across vehicle models
+    // --- Slot-car grip: measure bend BEFORE steering, so overspeed can win ---
     const baseSpeed = speed01ToBase(speedRef.current)
-
-    // Local + look-ahead bend (sensitive — even mild curves demand lift)
-    const lookNear = 0.003
-    const lookFar = 0.028
+    const lookNear = 0.0025
+    const lookFar = 0.035
     const tanFlat = curve.getTangentAt(tNow).clone()
     tanFlat.y = 0
     if (tanFlat.lengthSq() > 1e-8) tanFlat.normalize()
@@ -698,17 +545,17 @@ export function Vehicle({
     const turnFar = Math.acos(
       THREE.MathUtils.clamp(tanFlat.dot(tanFar), -1, 1),
     )
-    // Aggressive: small heading changes already count as "a corner"
+    // Very sensitive — almost any bend reads as a corner
     const turnFactor = Math.max(
-      THREE.MathUtils.smoothstep(0.006, 0.12, turnNear),
-      THREE.MathUtils.smoothstep(0.02, 0.28, turnFar),
+      THREE.MathUtils.smoothstep(0.004, 0.07, turnNear),
+      THREE.MathUtils.smoothstep(0.012, 0.2, turnFar),
     )
     const turnSigned = tanFlat.x * tanFar.z - tanFlat.z * tanFar.x
+    const outward = Math.sign(turnSigned || 1)
 
-    // Obstacles ahead slash safe speed (slot-car: lift before the wreck)
     let obstacleThreat = 0
     if (canMove) {
-      const threatWindow = 0.07
+      const threatWindow = 0.08
       for (const obs of track.obstacles) {
         let dto = obs.t - tNow
         if (dto < -0.5) dto += 1
@@ -716,95 +563,226 @@ export function Vehicle({
         if (reverseDirection) dto = -dto
         if (dto < -0.005 || dto > threatWindow) continue
         const latGap = Math.abs(obs.lateral - lateralOutRef.current)
-        if (latGap > obs.radius + carRadius + 0.85) continue
-        const urgency = 1 - dto / threatWindow
-        obstacleThreat = Math.max(obstacleThreat, urgency)
+        if (latGap > obs.radius + carRadius + 0.9) continue
+        obstacleThreat = Math.max(obstacleThreat, 1 - dto / threatWindow)
       }
     }
 
+    // Safe speed drops fast with bend: straight ~0.42, medium ~0.09, hairpin ~0.04
+    const bendSafe =
+      0.04 + 0.38 * Math.pow(1 - turnFactor, 2.8)
+    const maxSafe =
+      bendSafe * THREE.MathUtils.lerp(1, 0.35, obstacleThreat)
     const provisionalMul =
-      (1 + boostRef.current * 0.55) *
-      (hitSlowRef.current > 0 ? 0.72 : 1) *
-      (onOilSpin ? 0.38 : 1) *
+      (1 + boostRef.current * 0.45) *
+      (hitSlowRef.current > 0 ? 0.7 : 1) *
+      (oilSpinRef.current > 0 ? 0.35 : 1) *
       (1 - peerSlowRef.current)
     const provisionalSpeed = baseSpeed * provisionalMul
+    const ratio = provisionalSpeed / Math.max(maxSafe, 0.03)
+    const overspeeding = canMove && ratio > 1.02 && oilSpinRef.current <= 0
 
-    // Straights allow near-max; medium bends need ~half throw; hairpins crawl
-    const bendSafe = THREE.MathUtils.lerp(
-      0.44,
-      0.028,
-      turnFactor * turnFactor,
-    )
-    const maxSafe =
-      bendSafe * THREE.MathUtils.lerp(1, 0.4, obstacleThreat)
-    const ratio = provisionalSpeed / Math.max(maxSafe, 0.025)
-    const outward = Math.sign(turnSigned || 1)
+    // Prefer centerline only when under control — never fight a slide
+    let avoidTarget = 0
+    let peerSlow = 0
+    let strongestPass = 0
+    let passing = false
 
-    if (canMove && ratio > 1.02 && oilSpinRef.current <= 0) {
-      const excess = ratio - 1
-      // Slot-car: overspeed dumps you wide hard and fast
-      cornerDriftRef.current +=
-        outward * (0.85 * excess + 2.8 * excess * excess) * delta * 60
-    } else if (canMove && oilSpinRef.current <= 0) {
-      cornerDriftRef.current = THREE.MathUtils.damp(
-        cornerDriftRef.current,
+    if (canMove && !overspeeding) {
+      const lookWindow = 0.09
+      for (const obs of track.obstacles) {
+        let dt = obs.t - tNow
+        if (dt < -0.5) dt += 1
+        if (dt > 0.5) dt -= 1
+        if (reverseDirection) dt = -dt
+        if (dt < -0.01 || dt > lookWindow) continue
+
+        const sidePref =
+          Math.abs(obs.lateral) < 0.15
+            ? obs.position.x * 0.37 + obs.position.z * 0.71 >= 0
+              ? 1
+              : -1
+            : -Math.sign(obs.lateral)
+
+        const urgency = 1 - dt / lookWindow
+        const clearance = Math.min(
+          asphaltHalf - 0.4,
+          obs.radius + carRadius + 0.5,
+        )
+        avoidTarget += sidePref * clearance * urgency
+      }
+
+      const peers = peersRef?.current
+      if (peers) {
+        const myLat = lateralOutRef.current
+        const passLook = 0.085
+        for (let i = 0; i < peers.length; i++) {
+          if (i === racerIndex) continue
+          const peer = peers[i]
+          if (!peer?.active) continue
+
+          let dProg = peer.lap - lapRef.current + (peer.t - tNow)
+          if (reverseDirection) dProg = -dProg
+          if (dProg > 0.5) dProg -= 1
+          if (dProg < -0.5) dProg += 1
+
+          const latGap = peer.lateral - myLat
+          const absLat = Math.abs(latGap)
+          const needSep = carRadius + peer.radius + 0.65
+
+          if (dProg > 0.004 && dProg < passLook) {
+            const along = 1 - dProg / passLook
+            const blocking = absLat < needSep * 0.95
+            if (blocking || Math.abs(peer.lateral) < 0.55) {
+              passing = true
+              let side = passSideRef.current
+              if (side === 0) {
+                if (Math.abs(peer.lateral) > 0.18) {
+                  side = -Math.sign(peer.lateral)
+                } else if (Math.abs(myLat) > 0.12) {
+                  side = Math.sign(myLat)
+                } else {
+                  side = racerIndex % 2 === 0 ? 1 : -1
+                }
+                passSideRef.current = side
+              }
+              const passLane =
+                side * Math.min(asphaltHalf - 0.35, needSep * 0.9)
+              const desire = passLane * (0.35 + along * 0.65)
+              if (Math.abs(desire) > Math.abs(strongestPass)) {
+                strongestPass = desire
+              }
+              if (absLat < needSep * 0.45) {
+                peerSlow = Math.max(peerSlow, along * 0.18)
+              }
+            }
+          }
+
+          if (Math.abs(dProg) < 0.028 && absLat < needSep * 0.85) {
+            passing = true
+            const side =
+              absLat < 0.08
+                ? passSideRef.current || (racerIndex % 2 === 0 ? 1 : -1)
+                : -Math.sign(latGap || 1)
+            passSideRef.current = side
+            const overlap = (needSep - absLat) / needSep
+            const desire =
+              side * Math.min(asphaltHalf - 0.4, needSep * 0.75) * overlap
+            if (Math.abs(desire) > Math.abs(strongestPass)) {
+              strongestPass = desire
+            }
+          }
+        }
+      }
+      if (!passing) passSideRef.current = 0
+      if (Math.abs(strongestPass) > 0.01) {
+        avoidTarget =
+          Math.abs(strongestPass) >= Math.abs(avoidTarget)
+            ? strongestPass
+            : avoidTarget + strongestPass * 0.35
+      }
+
+      const onGrassHint = Math.abs(lateralOutRef.current) > asphaltHalf
+      if (
+        (oilSpinRef.current > 0 || onGrassHint) &&
+        Math.abs(strongestPass) < 0.2
+      ) {
+        avoidTarget *= 0.25
+      }
+
+      peerSlowRef.current = THREE.MathUtils.damp(
+        peerSlowRef.current,
+        peerSlow,
+        4,
+        delta,
+      )
+
+      avoidTarget = THREE.MathUtils.clamp(
+        avoidTarget,
+        -asphaltHalf + 0.25,
+        asphaltHalf - 0.25,
+      )
+      const avoidRate = Math.abs(avoidTarget) > 0.2 ? 3.4 : 2.4
+      avoidLatRef.current = THREE.MathUtils.damp(
+        avoidLatRef.current,
+        avoidTarget,
+        avoidRate,
+        delta,
+      )
+    } else if (!canMove) {
+      avoidLatRef.current = startLateral
+      cornerDriftRef.current = 0
+      peerSlowRef.current = 0
+      passSideRef.current = 0
+      oilSpinRef.current = 0
+      oilAngleRef.current = 0
+      waterLatRef.current = 0
+      hitLatVelRef.current = 0
+    } else {
+      // Overspeeding: freeze steering toward center; commit the slide
+      peerSlowRef.current = THREE.MathUtils.damp(
+        peerSlowRef.current,
         0,
-        recovering ? 3.0 : 2.2,
+        6,
         delta,
       )
     }
 
-    const absLatNow = Math.abs(lateralOutRef.current)
-    const farOff = absLatNow > asphaltHalf + 0.25
-    // Derail if way too hot in a bend — even before fully off asphalt
-    const hotCorner =
-      ratio > 1.35 && turnFactor > 0.18 && absLatNow > asphaltHalf * 0.55
+    const onOilSpin = oilSpinRef.current > 0
+    const recovering =
+      onOilSpin || Math.abs(lateralOutRef.current) > asphaltHalf
+
+    if (overspeeding) {
+      const excess = ratio - 1
+      // Hard dump wide — full MIDI through a bend leaves the ribbon in <0.5s
+      cornerDriftRef.current +=
+        outward * (2.2 * excess + 5.5 * excess * excess) * delta * 60
+    } else if (canMove && oilSpinRef.current <= 0) {
+      cornerDriftRef.current = THREE.MathUtils.damp(
+        cornerDriftRef.current,
+        0,
+        recovering ? 3.2 : 2.4,
+        delta,
+      )
+    }
+
+    const absLatNow = Math.abs(
+      avoidLatRef.current + cornerDriftRef.current,
+    )
+    const farOff = absLatNow > asphaltHalf + 0.15
+    const hotCorner = ratio > 1.2 && turnFactor > 0.12 && absLatNow > 0.45
     if (
       canMove &&
       (farOff || hotCorner) &&
-      ratio > 1.1 &&
+      ratio > 1.08 &&
       oilSpinRef.current <= 0 &&
       spinCooldownRef.current <= 0
     ) {
-      oilSpinRef.current = 1.5
-      spinCooldownRef.current = 2.6
+      oilSpinRef.current = 1.55
+      spinCooldownRef.current = 2.4
     }
 
     if (oilSpinRef.current > 0) {
       cornerDriftRef.current = THREE.MathUtils.damp(
         cornerDriftRef.current,
-        Math.sign(cornerDriftRef.current || outward) * asphaltHalf * 0.9,
-        2.0,
+        Math.sign(cornerDriftRef.current || outward) * asphaltHalf * 0.95,
+        1.8,
         delta,
       )
     }
     cornerDriftRef.current = THREE.MathUtils.clamp(
       cornerDriftRef.current,
-      -lateralLimit + 0.2,
-      lateralLimit - 0.2,
+      -lateralLimit + 0.15,
+      lateralLimit - 0.15,
     )
 
-    // While overspeeding, don't steer back to center — commit the slide
-    if (canMove && ratio > 1.05) {
-      avoidLatRef.current = THREE.MathUtils.damp(
-        avoidLatRef.current,
-        avoidLatRef.current * 0.4,
-        2.2,
-        delta,
-      )
-    }
-
     const onGrass = absLatNow > asphaltHalf
-
-    // Sliding scrub: overspeed bleeds pace (must lift the knob to recover)
     const scrub =
-      ratio > 1
-        ? 1 / (1 + (ratio - 1) * 1.35)
-        : 1
+      ratio > 1 ? 1 / (1 + (ratio - 1) * 1.6) : 1
 
     const speedMul =
       (canMove ? provisionalMul : 0) *
-      (onGrass ? 0.28 : 1) *
+      (onGrass ? 0.22 : 1) *
       scrub
     const dt =
       ((reverseDirection ? -1 : 1) * baseSpeed * speedMul * delta * 60) / len
@@ -818,7 +796,6 @@ export function Vehicle({
       onLap?.(lapRef.current, vehicleId)
       if (lapRef.current >= lapCount && !finishedRef.current) {
         finishedRef.current = true
-        // Snap just past the line so we don't re-cross
         tRef.current = reverseDirection ? 0.995 : 0.005
         onFinished?.(vehicleId, racerIndex)
       }
