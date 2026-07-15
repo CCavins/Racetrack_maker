@@ -322,8 +322,14 @@ export function Vehicle({
   const lateralOutRef = useRef(startLateral)
 
   const stockSpeed = VEHICLE_META[vehicleId].speed
-  /** Advertised speed ±3 (picker units), rolled each lap */
-  const lapSpeedRef = useRef(rollLapBaseSpeed(stockSpeed))
+  /** Rolled target for this lap (advertised ±3) */
+  const lapSpeedTargetRef = useRef(rollLapBaseSpeed(stockSpeed))
+  /** Smoothed base speed used for motion */
+  const lapSpeedCurrentRef = useRef(lapSpeedTargetRef.current)
+  /** Speed at start of the 5s ease toward the new target */
+  const lapSpeedFromRef = useRef(lapSpeedTargetRef.current)
+  /** Seconds into the ease (0…5); ≥5 means settled */
+  const lapSpeedEaseRef = useRef(5)
 
   const wrapMap = useMemo(() => {
     if (vehicleLook !== 'wrap' || !vehicleWrap) return null
@@ -614,7 +620,20 @@ export function Vehicle({
     )
 
     const onOilSpin = oilSpinRef.current > 0
-    const baseSpeed = lapSpeedRef.current
+    // Ease base speed toward this lap's roll over 5s after the line
+    if (lapSpeedEaseRef.current < 5) {
+      lapSpeedEaseRef.current = Math.min(5, lapSpeedEaseRef.current + delta)
+      const u = lapSpeedEaseRef.current / 5
+      const s = u * u * (3 - 2 * u) // smoothstep
+      lapSpeedCurrentRef.current = THREE.MathUtils.lerp(
+        lapSpeedFromRef.current,
+        lapSpeedTargetRef.current,
+        s,
+      )
+    } else {
+      lapSpeedCurrentRef.current = lapSpeedTargetRef.current
+    }
+    const baseSpeed = lapSpeedCurrentRef.current
     const speedMul =
       (1 + boostRef.current * 0.85) *
       (hitSlowRef.current > 0 ? 0.78 : 1) *
@@ -629,7 +648,9 @@ export function Vehicle({
     const crossedReverse = reverseDirection && tRef.current > prevT + 0.5
     if (crossedForward || crossedReverse) {
       lapRef.current += 1
-      lapSpeedRef.current = rollLapBaseSpeed(stockSpeed)
+      lapSpeedFromRef.current = lapSpeedCurrentRef.current
+      lapSpeedTargetRef.current = rollLapBaseSpeed(stockSpeed)
+      lapSpeedEaseRef.current = 0
       onLap?.(lapRef.current, vehicleId)
     }
 
