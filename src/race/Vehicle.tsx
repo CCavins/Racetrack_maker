@@ -179,6 +179,7 @@ function LoadedVehicle({
     // Some Sketchfab exports face the opposite way after axis align
     const facingFlip: Partial<Record<VehicleId, number>> = {
       muscle: Math.PI,
+      cruiser: Math.PI,
     }
     c.rotation.y += facingFlip[id] ?? 0
 
