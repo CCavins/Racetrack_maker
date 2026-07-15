@@ -17,6 +17,7 @@ import {
 } from '../types'
 import { recolorBodyMaterials } from '../lib/vehicleStyle'
 import { POWER_GATE_LIFT, speed01ToBase } from '../midi/midiTypes'
+import { applyChaseCamera } from './chaseCam'
 
 const VEHICLE_URLS: Record<VehicleId, string> = {
   hovercar: `${import.meta.env.BASE_URL}assets/vehicles/hovercar.glb`,
@@ -228,6 +229,8 @@ export type GripLevel = 'green' | 'amber' | 'red'
 export type VehicleState = {
   position: THREE.Vector3
   quaternion: THREE.Quaternion
+  /** Ground-plane driving direction (unit, Y≈0) */
+  forward: THREE.Vector3
   t: number
   lap: number
   lateral: number
@@ -1114,6 +1117,7 @@ export function Vehicle({
     stateRef.current = {
       position: finalPos.clone(),
       quaternion: smoothQuatRef.current.clone(),
+      forward: tangent.clone(),
       t,
       lap: lapRef.current,
       lateral: clampedLateral,
@@ -1138,24 +1142,14 @@ export function Vehicle({
     }
 
     if (chaseCam) {
-      const dist = chaseDistance
-      const height = Math.max(2.2, dist * 0.48)
-      // Orbit around the car: rotate the chase offset in the ground plane
-      const back = tangent.clone().multiplyScalar(-1)
-      back.applyAxisAngle(new THREE.Vector3(0, 1, 0), chaseOrbit)
-      back.normalize()
-      const camBehind = finalPos
-        .clone()
-        .addScaledVector(back, dist)
-        .add(new THREE.Vector3(0, height, 0))
-      state.camera.position.lerp(camBehind, 1 - Math.pow(0.08, delta * 60))
-      // Look at the car itself. Only nudge look-ahead when nearly behind —
-      // side/front orbits must stay centered on the vehicle, not far ahead.
-      const rearFactor = Math.max(0, Math.cos(chaseOrbit)) ** 2
-      const look = finalPos.clone()
-      look.y += 0.85
-      look.addScaledVector(tangent, rearFactor * Math.min(2.2, dist * 0.18))
-      state.camera.lookAt(look)
+      applyChaseCamera(
+        state.camera,
+        finalPos,
+        tangent,
+        chaseDistance,
+        chaseOrbit,
+        delta,
+      )
     }
   })
 

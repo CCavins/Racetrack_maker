@@ -24,6 +24,66 @@
   height: 100% !important;
 }
 
+/* —— Split chase panes (labels / borders over shared WebGL) —— */
+.split-pane-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  display: grid;
+}
+
+.split-pane-labels.split-n1 {
+  grid-template-columns: 1fr;
+}
+
+.split-pane-labels.split-n2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.split-pane-labels.split-n3 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.split-pane-labels.split-n3 > .split-pane-frame:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.split-pane-labels.split-n4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.split-pane-frame {
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  position: relative;
+  min-height: 0;
+}
+
+.split-pane-tag {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.55rem;
+  background: rgba(18, 20, 22, 0.72);
+  color: #f4f0e8;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.split-pane-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .race-loading-overlay {
   z-index: 20;
   animation: none;

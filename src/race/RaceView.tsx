@@ -11,7 +11,10 @@ import { TrackMesh } from './TrackMesh'
 import { PropInstances } from './PropInstances'
 import { Vehicle, type GripLevel, type PeerSnapshot, type VehicleState } from './Vehicle'
 import { MidiSettingsPanel } from './MidiSettingsPanel'
+import { SplitChaseRig } from './SplitChaseRig'
 import './RaceView.css'
+
+type CamMode = 'chase' | 'orbit' | 'split'
 
 const START_T = 0
 
@@ -38,6 +41,7 @@ function emptyState(id: VehicleId): VehicleState {
   return {
     position: new THREE.Vector3(),
     quaternion: new THREE.Quaternion(),
+    forward: new THREE.Vector3(0, 0, 1),
     t: 0,
     lap: 0,
     lateral: 0,
@@ -61,7 +65,7 @@ function SceneReady({ onReady }: { onReady: () => void }) {
 }
 
 function SceneContent({
-  chaseCam,
+  camMode,
   chaseDistance,
   chaseOrbit,
   chaseIndex,
@@ -79,7 +83,7 @@ function SceneContent({
   lapCount,
   onReady,
 }: {
-  chaseCam: boolean
+  camMode: CamMode
   chaseDistance: number
   chaseOrbit: number
   chaseIndex: number
@@ -107,6 +111,8 @@ function SceneContent({
   const groundSize = Math.max(maxX - minX, maxZ - minZ) + pad * 2
   const look = design.vehicleLook ?? 'stock'
   const chaseState = stateRefs[chaseIndex] ?? stateRefs[0]
+  const chaseCam = camMode === 'chase'
+  const splitCam = camMode === 'split'
 
   return (
     <>
@@ -194,7 +200,7 @@ function SceneContent({
         far={12}
       />
 
-      {!chaseCam && (
+      {camMode === 'orbit' && (
         <OrbitControls
           makeDefault
           maxPolarAngle={Math.PI / 2.1}
@@ -204,7 +210,18 @@ function SceneContent({
         />
       )}
 
-      {!chaseCam && chaseState && <CarScreenProjector stateRef={chaseState} />}
+      {camMode === 'orbit' && chaseState && (
+        <CarScreenProjector stateRef={chaseState} />
+      )}
+
+      <SplitChaseRig
+        enabled={splitCam && racers.length > 0}
+        stateRefs={stateRefs}
+        count={racers.length}
+        chaseDistance={chaseDistance}
+        chaseOrbit={chaseOrbit}
+      />
+
       <SceneReady onReady={onReady} />
     </>
   )
@@ -323,7 +340,7 @@ export function RaceView() {
   const { speed01Refs, setMidiListening } = useMidiControl()
   const racers = useMemo(() => getRaceVehicles(design), [design])
   const lapCount = design.lapCount ?? 3
-  const [chaseCam, setChaseCam] = useState(true)
+  const [camMode, setCamMode] = useState<CamMode>('chase')
   const [chaseDistance, setChaseDistance] = useState(8)
   const [chaseOrbit, setChaseOrbit] = useState(0)
   const [chaseIndex, setChaseIndex] = useState(0)
@@ -347,6 +364,12 @@ export function RaceView() {
   chaseOrbitRef.current = chaseOrbit
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasHostRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (camMode === 'split' && racers.length < 2) {
+      setCamMode('chase')
+    }
+  }, [camMode, racers.length])
 
   useEffect(() => {
     setMidiListening(design.midiEnabled !== false)
@@ -528,20 +551,20 @@ export function RaceView() {
     const el = canvasHostRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
-      if (!chaseCam || midiOpen || raceComplete) return
+      if ((camMode !== 'chase' && camMode !== 'split') || midiOpen || raceComplete) return
       e.preventDefault()
       setChaseDistance((d) =>
         Math.min(22, Math.max(3.5, d + e.deltaY * 0.012)),
       )
     }
     const onPointerDown = (e: PointerEvent) => {
-      if (!chaseCam || midiOpen || raceComplete) return
+      if ((camMode !== 'chase' && camMode !== 'split') || midiOpen || raceComplete) return
       if (e.button !== 0) return
       dragRef.current = { x: e.clientX, orbit: chaseOrbitRef.current }
       el.setPointerCapture(e.pointerId)
     }
     const onPointerMove = (e: PointerEvent) => {
-      if (!chaseCam || !dragRef.current) return
+      if ((camMode !== 'chase' && camMode !== 'split') || !dragRef.current) return
       const dx = e.clientX - dragRef.current.x
       setChaseOrbit(dragRef.current.orbit - dx * 0.008)
     }
@@ -565,7 +588,7 @@ export function RaceView() {
       el.removeEventListener('pointerup', onPointerUp)
       el.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [chaseCam, midiOpen, raceComplete])
+  }, [camMode, midiOpen, raceComplete])
 
   const fmt = (ms: number) => {
     const s = ms / 1000
@@ -602,7 +625,7 @@ export function RaceView() {
         >
           <Suspense fallback={null}>
             <SceneContent
-              chaseCam={chaseCam}
+              camMode={camMode}
               chaseDistance={chaseDistance}
               chaseOrbit={chaseOrbit}
               chaseIndex={chaseIndex}
@@ -694,7 +717,34 @@ export function RaceView() {
         </div>
       )}
 
-      <CarEdgeHint active={!chaseCam && sceneReady && !raceComplete} />
+      <CarEdgeHint active={camMode === 'orbit' && sceneReady && !raceComplete} />
+
+      {camMode === 'split' && sceneReady && racers.length > 0 && (
+        <div
+          className={`split-pane-labels split-n${Math.min(4, Math.max(1, racers.length))}`}
+          aria-hidden
+        >
+          {racers.map((id, i) => {
+            const marker =
+              RACER_MARKER_COLORS[i] ?? RACER_MARKER_COLORS[0]
+            return (
+              <div
+                key={`pane-${id}-${i}`}
+                className="split-pane-frame"
+                style={{ borderColor: marker }}
+              >
+                <span className="split-pane-tag">
+                  <span
+                    className="split-pane-dot"
+                    style={{ background: marker }}
+                  />
+                  {VEHICLE_META[id].label}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       <div className="race-hud">
         <div className="hud-left">
@@ -705,9 +755,11 @@ export function RaceView() {
             {design.reverseDirection ? ' · CCW' : ' · CW'}
             {` · ${lapCount} laps`}
             {design.midiEnabled !== false ? ' · MIDI on' : ' · MIDI off'}
-            {chaseCam
-              ? ` · Zoom ${chaseDistance.toFixed(0)}m · drag to peek`
-              : ' · Orbit'}
+            {camMode === 'orbit'
+              ? ' · Orbit'
+              : camMode === 'split'
+                ? ` · Split · Zoom ${chaseDistance.toFixed(0)}m · drag to peek`
+                : ` · Zoom ${chaseDistance.toFixed(0)}m · drag to peek`}
             {showBeacons ? ' · markers on' : ' · markers off'}
           </p>
           <p className="hud-times">
@@ -829,13 +881,24 @@ export function RaceView() {
           </button>
           <button
             type="button"
-            className="hud-btn"
+            className={`hud-btn ${camMode === 'split' ? 'on' : ''}`}
             onClick={() => {
-              setChaseCam((c) => !c)
+              setCamMode((m) => {
+                if (m === 'chase') return racers.length > 1 ? 'split' : 'orbit'
+                if (m === 'split') return 'orbit'
+                return 'chase'
+              })
               setChaseOrbit(0)
             }}
+            title="Cycle chase → split → orbit"
           >
-            {chaseCam ? 'Orbit cam' : 'Chase cam'}
+            {camMode === 'chase'
+              ? racers.length > 1
+                ? 'Split view'
+                : 'Orbit cam'
+              : camMode === 'split'
+                ? 'Orbit cam'
+                : 'Chase cam'}
           </button>
           <button
             type="button"
