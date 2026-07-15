@@ -11,6 +11,13 @@ import {
 const BASE = import.meta.env.BASE_URL
 
 export const VEHICLE_GLB_URLS: Partial<Record<VehicleId, string>> = {
+  hovercar: `${BASE}assets/vehicles/hovercar.glb`,
+  cruiser: `${BASE}assets/vehicles/cruiser.glb`,
+  muscle: `${BASE}assets/vehicles/muscle.glb`,
+  canyon: `${BASE}assets/vehicles/canyon.glb`,
+  thunderbolt: `${BASE}assets/vehicles/thunderbolt.glb`,
+  cheetah: `${BASE}assets/vehicles/cheetah.glb`,
+  lct: `${BASE}assets/vehicles/lct.glb`,
   motorcycle: `${BASE}assets/vehicles/motorcycle.glb`,
   truck: `${BASE}assets/vehicles/truck.glb`,
   van: `${BASE}assets/vehicles/van.glb`,
@@ -22,9 +29,6 @@ export const VEHICLE_GLB_URLS: Partial<Record<VehicleId, string>> = {
   ambulance: `${BASE}assets/vehicles/ambulance.glb`,
   hatchback: `${BASE}assets/vehicles/hatchback.glb`,
   future: `${BASE}assets/vehicles/future.glb`,
-  hovercar: `${BASE}assets/vehicles/hovercar.glb`,
-  cruiser: `${BASE}assets/vehicles/cruiser.glb`,
-  muscle: `${BASE}assets/vehicles/muscle.glb`,
 }
 
 export const PROP_GLB_URLS: Partial<Record<StickerType, string>> = {

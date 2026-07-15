@@ -13,6 +13,13 @@ export type StickerType =
   | 'water'
 
 export type VehicleId =
+  | 'hovercar'
+  | 'cruiser'
+  | 'muscle'
+  | 'canyon'
+  | 'thunderbolt'
+  | 'cheetah'
+  | 'lct'
   | 'motorcycle'
   | 'truck'
   | 'van'
@@ -24,9 +31,6 @@ export type VehicleId =
   | 'ambulance'
   | 'hatchback'
   | 'future'
-  | 'hovercar'
-  | 'cruiser'
-  | 'muscle'
 
 /** Old Higgsfield ids → current Kenney replacements (saved tracks / imports) */
 export const LEGACY_VEHICLE_MAP: Record<string, VehicleId> = {
@@ -121,6 +125,13 @@ export const VEHICLE_META: Record<
   VehicleId,
   { label: string; speed: number; color: string }
 > = {
+  hovercar: { label: 'Hovercar', speed: 0.14, color: '#90e0ef' },
+  cruiser: { label: 'Cop Cruiser', speed: 0.11, color: '#1d3557' },
+  muscle: { label: 'Muscle Car', speed: 0.13, color: '#e85d04' },
+  canyon: { label: 'Canyon Custom', speed: 0.12, color: '#bc6c25' },
+  thunderbolt: { label: 'Thunderbolt', speed: 0.15, color: '#c1121f' },
+  cheetah: { label: 'Cheetah', speed: 0.14, color: '#f4a261' },
+  lct: { label: 'LCT Sports', speed: 0.15, color: '#2b2d42' },
   race: { label: 'Race Car', speed: 0.15, color: '#ef233c' },
   motorcycle: { label: 'Motorcycle', speed: 0.16, color: '#457b9d' },
   truck: { label: 'Pickup Truck', speed: 0.08, color: '#2a9d8f' },
@@ -132,9 +143,6 @@ export const VEHICLE_META: Record<
   ambulance: { label: 'Ambulance', speed: 0.09, color: '#f8f9fa' },
   hatchback: { label: 'Hatchback', speed: 0.12, color: '#06d6a0' },
   future: { label: 'Future Racer', speed: 0.14, color: '#7b2cbf' },
-  hovercar: { label: 'Hovercar', speed: 0.14, color: '#90e0ef' },
-  cruiser: { label: 'Cop Cruiser', speed: 0.11, color: '#1d3557' },
-  muscle: { label: 'Muscle Car', speed: 0.13, color: '#e85d04' },
 }
 
 export const STICKER_TYPES = Object.keys(STICKER_META) as StickerType[]

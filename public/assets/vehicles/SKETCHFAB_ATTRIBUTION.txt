@@ -19,4 +19,28 @@ Sketchfab vehicle models used in Circuit Sketch
    License: CC Attribution
    Local id: muscle
 
+4. Canyon '75 Custom - Low poly model
+   Author: Daniel Zhabotinsky
+   URL: https://sketchfab.com/3d-models/canyon-75-custom-low-poly-model-bd4c9883b9194ba1ac1c7f22300976b9
+   License: CC Attribution
+   Local id: canyon
+
+5. Thunderbolt '96 Interceptor - Low poly model
+   Author: Daniel Zhabotinsky
+   URL: https://sketchfab.com/3d-models/thunderbolt-96-interceptor-low-poly-model-caf7ea9fdf90462cbdc2b0edf872ead8
+   License: CC Attribution
+   Local id: thunderbolt
+
+6. Cheetah '84 - Low poly Model
+   Author: Daniel Zhabotinsky
+   URL: https://sketchfab.com/3d-models/cheetah-84-low-poly-model-c967ab4abbc54ae4b7933fd81a86c99c
+   License: CC Attribution
+   Local id: cheetah
+
+7. LCT 3000 '95 - Low poly model
+   Author: Daniel Zhabotinsky
+   URL: https://sketchfab.com/3d-models/lct-3000-95-low-poly-model-663a0953c038434a918cb85725c88ffa
+   License: CC Attribution
+   Local id: lct
+
 Models were compressed (Draco + WebP) for web delivery; originals remain © their authors under the licenses above.

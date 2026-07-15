@@ -13,6 +13,13 @@ import { VEHICLE_META, type VehicleId, type VehicleLookMode } from '../types'
 import { recolorBodyMaterials } from '../lib/vehicleStyle'
 
 const VEHICLE_URLS: Record<VehicleId, string> = {
+  hovercar: `${import.meta.env.BASE_URL}assets/vehicles/hovercar.glb`,
+  cruiser: `${import.meta.env.BASE_URL}assets/vehicles/cruiser.glb`,
+  muscle: `${import.meta.env.BASE_URL}assets/vehicles/muscle.glb`,
+  canyon: `${import.meta.env.BASE_URL}assets/vehicles/canyon.glb`,
+  thunderbolt: `${import.meta.env.BASE_URL}assets/vehicles/thunderbolt.glb`,
+  cheetah: `${import.meta.env.BASE_URL}assets/vehicles/cheetah.glb`,
+  lct: `${import.meta.env.BASE_URL}assets/vehicles/lct.glb`,
   motorcycle: `${import.meta.env.BASE_URL}assets/vehicles/motorcycle.glb`,
   truck: `${import.meta.env.BASE_URL}assets/vehicles/truck.glb`,
   van: `${import.meta.env.BASE_URL}assets/vehicles/van.glb`,
@@ -24,27 +31,9 @@ const VEHICLE_URLS: Record<VehicleId, string> = {
   ambulance: `${import.meta.env.BASE_URL}assets/vehicles/ambulance.glb`,
   hatchback: `${import.meta.env.BASE_URL}assets/vehicles/hatchback.glb`,
   future: `${import.meta.env.BASE_URL}assets/vehicles/future.glb`,
-  hovercar: `${import.meta.env.BASE_URL}assets/vehicles/hovercar.glb`,
-  cruiser: `${import.meta.env.BASE_URL}assets/vehicles/cruiser.glb`,
-  muscle: `${import.meta.env.BASE_URL}assets/vehicles/muscle.glb`,
 }
 
-const AVAILABLE_VEHICLE_GLBS = new Set<VehicleId>([
-  'motorcycle',
-  'truck',
-  'van',
-  'race',
-  'sedan',
-  'taxi',
-  'police',
-  'suv',
-  'ambulance',
-  'hatchback',
-  'future',
-  'hovercar',
-  'cruiser',
-  'muscle',
-])
+const AVAILABLE_VEHICLE_GLBS = new Set<VehicleId>(Object.keys(VEHICLE_URLS) as VehicleId[])
 
 function FallbackVehicle({
   id,
@@ -176,10 +165,14 @@ function LoadedVehicle({
     if (size2.x > size2.z) {
       c.rotation.y = Math.PI / 2
     }
-    // Some Sketchfab exports face the opposite way after axis align
+    // Daniel Zhabotinsky Sketchfab exports face the opposite way after axis align
     const facingFlip: Partial<Record<VehicleId, number>> = {
       muscle: Math.PI,
       cruiser: Math.PI,
+      canyon: Math.PI,
+      thunderbolt: Math.PI,
+      cheetah: Math.PI,
+      lct: Math.PI,
     }
     c.rotation.y += facingFlip[id] ?? 0
 
