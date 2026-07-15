@@ -637,9 +637,7 @@ export function TrackCanvas() {
 
   const hint =
     tool === 'sticker' && pendingSticker
-      ? snapsToTrack(pendingSticker)
-        ? `Click to place ${STICKER_META[pendingSticker].label} · click again for more · click the sticker to deselect`
-        : `Click to place ${STICKER_META[pendingSticker].label} · click again for more · click the sticker to deselect`
+      ? `Place ${STICKER_META[pendingSticker].label}: tap the canvas, or drag from the sticker list · tap the sticker again to deselect`
       : selectedPointIndex !== null && design.path.length > MIN_POINTS
         ? 'Drag handles to reshape · Delete removes selected point'
         : 'Drag handles to reshape · click the edge to add a point'
