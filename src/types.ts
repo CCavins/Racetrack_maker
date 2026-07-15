@@ -21,6 +21,8 @@ export type VehicleId =
   | 'cheetah'
   | 'lct'
   | 'motorcycle'
+  | 'cb750'
+  | 'cyberbike'
   | 'truck'
   | 'van'
   | 'race'
@@ -134,6 +136,8 @@ export const VEHICLE_META: Record<
   lct: { label: 'LCT Sports', speed: 0.15, color: '#2b2d42' },
   race: { label: 'Race Car', speed: 0.15, color: '#ef233c' },
   motorcycle: { label: 'Motorcycle', speed: 0.16, color: '#457b9d' },
+  cb750: { label: 'CB750', speed: 0.16, color: '#c45c26' },
+  cyberbike: { label: 'Cyber Bike', speed: 0.17, color: '#00e5ff' },
   truck: { label: 'Pickup Truck', speed: 0.08, color: '#2a9d8f' },
   van: { label: 'Van', speed: 0.09, color: '#e9c46a' },
   sedan: { label: 'Sedan', speed: 0.11, color: '#4cc9f0' },
@@ -147,6 +151,13 @@ export const VEHICLE_META: Record<
 
 export const STICKER_TYPES = Object.keys(STICKER_META) as StickerType[]
 export const VEHICLE_IDS = Object.keys(VEHICLE_META) as VehicleId[]
+
+/** Two-wheelers: smaller radius, bike scale, boost wheelie */
+const MOTORCYCLE_IDS = new Set<VehicleId>(['motorcycle', 'cb750', 'cyberbike'])
+
+export function isMotorcycle(id: VehicleId): boolean {
+  return MOTORCYCLE_IDS.has(id)
+}
 
 /** Snap to the course when placing / dragging */
 export const SNAP_TO_TRACK_TYPES: StickerType[] = [

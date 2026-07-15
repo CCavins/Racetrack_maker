@@ -9,7 +9,12 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import type { Track3D } from '../lib/buildTrack3D'
-import { VEHICLE_META, type VehicleId, type VehicleLookMode } from '../types'
+import {
+  VEHICLE_META,
+  isMotorcycle,
+  type VehicleId,
+  type VehicleLookMode,
+} from '../types'
 import { recolorBodyMaterials } from '../lib/vehicleStyle'
 
 const VEHICLE_URLS: Record<VehicleId, string> = {
@@ -21,6 +26,8 @@ const VEHICLE_URLS: Record<VehicleId, string> = {
   cheetah: `${import.meta.env.BASE_URL}assets/vehicles/cheetah.glb`,
   lct: `${import.meta.env.BASE_URL}assets/vehicles/lct.glb`,
   motorcycle: `${import.meta.env.BASE_URL}assets/vehicles/motorcycle.glb`,
+  cb750: `${import.meta.env.BASE_URL}assets/vehicles/cb750.glb`,
+  cyberbike: `${import.meta.env.BASE_URL}assets/vehicles/cyberbike.glb`,
   truck: `${import.meta.env.BASE_URL}assets/vehicles/truck.glb`,
   van: `${import.meta.env.BASE_URL}assets/vehicles/van.glb`,
   race: `${import.meta.env.BASE_URL}assets/vehicles/race.glb`,
@@ -60,7 +67,7 @@ function FallbackVehicle({
   // Bodies are built with length along Z; wrap with π yaw so nose faces
   // local -Z (Three.js lookAt forward).
   const body = (() => {
-    if (id === 'motorcycle') {
+    if (isMotorcycle(id)) {
       return (
         <group>
           <mesh castShadow position={[0, 0.45, 0]}>
@@ -151,7 +158,7 @@ function LoadedVehicle({
         ? 3.0
         : id === 'suv' || id === 'van'
           ? 2.6
-          : id === 'motorcycle'
+          : isMotorcycle(id)
             ? 1.6
             : 2.2
     c.scale.multiplyScalar(target / maxDim)
@@ -165,7 +172,7 @@ function LoadedVehicle({
     if (size2.x > size2.z) {
       c.rotation.y = Math.PI / 2
     }
-    // Daniel Zhabotinsky Sketchfab exports face the opposite way after axis align
+    // Some Sketchfab exports face the opposite way after axis align
     const facingFlip: Partial<Record<VehicleId, number>> = {
       muscle: Math.PI,
       cruiser: Math.PI,
@@ -173,6 +180,8 @@ function LoadedVehicle({
       thunderbolt: Math.PI,
       cheetah: Math.PI,
       lct: Math.PI,
+      cb750: Math.PI,
+      cyberbike: Math.PI,
     }
     c.rotation.y += facingFlip[id] ?? 0
 
@@ -339,7 +348,7 @@ export function Vehicle({
       ? 1.1
       : vehicleId === 'suv' || vehicleId === 'van'
         ? 0.95
-        : vehicleId === 'motorcycle'
+        : isMotorcycle(vehicleId)
           ? 0.45
           : 0.75
   const url = AVAILABLE_VEHICLE_GLBS.has(vehicleId)
@@ -383,7 +392,7 @@ export function Vehicle({
         if (d.kind === 'boost') {
           // Fresh boost pad hit → motorcycle pops a wheelie
           if (
-            vehicleId === 'motorcycle' &&
+            isMotorcycle(vehicleId) &&
             boostRef.current < 0.2 &&
             wheelieTRef.current < 0
           ) {
@@ -405,7 +414,7 @@ export function Vehicle({
     const WHEELIE_DUR = 2
     const WHEELIE_MAX = Math.PI / 6 // 30°
     let wheelieAngle = 0
-    if (vehicleId === 'motorcycle' && wheelieTRef.current >= 0) {
+    if (isMotorcycle(vehicleId) && wheelieTRef.current >= 0) {
       wheelieTRef.current += delta
       const u = Math.min(1, wheelieTRef.current / WHEELIE_DUR)
       // Rise with the boost (~0.45s), hold, then settle (~0.55s)
@@ -425,7 +434,7 @@ export function Vehicle({
         wheelieTRef.current = -1
         wheelieAngle = 0
       }
-    } else if (vehicleId !== 'motorcycle') {
+    } else if (!isMotorcycle(vehicleId)) {
       wheelieTRef.current = -1
     }
     wheelieAngleRef.current = THREE.MathUtils.damp(

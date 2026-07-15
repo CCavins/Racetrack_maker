@@ -43,4 +43,16 @@ Sketchfab vehicle models used in Circuit Sketch
    License: CC Attribution
    Local id: lct
 
+8. Honda CB 750 F Super Sport 1970
+   Author: Alex.Ka
+   URL: https://sketchfab.com/3d-models/honda-cb-750-f-super-sport-1970-f121301624174b179ca4d50158797b03
+   License: CC Attribution
+   Local id: cb750
+
+9. Low-Poly Sci-Fi Motorcycle
+   Author: Mert Tetik
+   URL: https://sketchfab.com/3d-models/low-poly-sci-fi-motorcycle-50c38758e5134a0b8ffa49780e7fe228
+   License: CC Attribution
+   Local id: cyberbike
+
 Models were compressed (Draco + WebP) for web delivery; originals remain © their authors under the licenses above.

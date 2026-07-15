@@ -19,6 +19,8 @@ export const VEHICLE_GLB_URLS: Partial<Record<VehicleId, string>> = {
   cheetah: `${BASE}assets/vehicles/cheetah.glb`,
   lct: `${BASE}assets/vehicles/lct.glb`,
   motorcycle: `${BASE}assets/vehicles/motorcycle.glb`,
+  cb750: `${BASE}assets/vehicles/cb750.glb`,
+  cyberbike: `${BASE}assets/vehicles/cyberbike.glb`,
   truck: `${BASE}assets/vehicles/truck.glb`,
   van: `${BASE}assets/vehicles/van.glb`,
   race: `${BASE}assets/vehicles/race.glb`,
