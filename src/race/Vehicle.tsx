@@ -992,7 +992,7 @@ export function Vehicle({
     if (wasAirborne.current) {
       // Follow the loft a bit so the nose rises/falls in the air
       const airPitch =
-        Math.atan2(airVelRef.current, Math.max(baseSpeed * 45, 5)) * 0.8
+        Math.atan2(airVelRef.current, Math.max(ribbonSpeed * 45, 5)) * 0.8
       desiredPitch = THREE.MathUtils.lerp(desiredPitch, airPitch, 0.7)
     }
     desiredPitch = THREE.MathUtils.clamp(desiredPitch, -0.9, 0.9)
