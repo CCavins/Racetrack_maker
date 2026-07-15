@@ -271,7 +271,7 @@ type Props = {
   /** Normalized MIDI/slider speed 0–1 for this lineup slot */
   speed01Ref?: MutableRefObject<number>
   onLap?: (lap: number, vehicleId: VehicleId) => void
-  onFinished?: (vehicleId: VehicleId) => void
+  onFinished?: (vehicleId: VehicleId, racerIndex: number) => void
 }
 
 export function Vehicle({
@@ -518,8 +518,14 @@ export function Vehicle({
       oilAngleRef.current = THREE.MathUtils.damp(a, 0, 6, delta)
     }
 
-    // Prefer centerline; only ease aside for obstacles / cars ahead, then return
+    // Prefer centerline; only ease aside for obstacles / cars ahead, then return.
+    // During countdown (!canMove), freeze grid lanes — do not pull to center.
     let avoidTarget = 0
+    let peerSlow = 0
+    let strongestPass = 0
+    let passing = false
+
+    if (canMove) {
     const lookWindow = 0.09
     for (const obs of track.obstacles) {
       let dt = obs.t - tNow
@@ -544,9 +550,6 @@ export function Vehicle({
     }
 
     // Peer overtaking: swing out around the car ahead, then settle back to center
-    let peerSlow = 0
-    let passing = false
-    let strongestPass = 0
     const peers = peersRef?.current
     if (peers) {
       const myLat = lateralOutRef.current
@@ -622,8 +625,8 @@ export function Vehicle({
 
     // Prefer center while spinning / on grass so recovery pulls back on course
     const onGrassHint = Math.abs(lateralOutRef.current) > asphaltHalf
-    const recovering = oilSpinRef.current > 0 || onGrassHint
-    if (recovering && Math.abs(strongestPass) < 0.2) {
+    const recoveringSteer = oilSpinRef.current > 0 || onGrassHint
+    if (recoveringSteer && Math.abs(strongestPass) < 0.2) {
       avoidTarget *= 0.25
     }
 
@@ -640,7 +643,7 @@ export function Vehicle({
       asphaltHalf - 0.25,
     )
     // Snappier when dodging; softer when returning to center; stronger recover pull
-    const avoidRate = recovering
+    const avoidRate = recoveringSteer
       ? 4.2
       : Math.abs(avoidTarget) > 0.2
         ? 3.4
@@ -651,25 +654,55 @@ export function Vehicle({
       avoidRate,
       delta,
     )
+    } else {
+      avoidLatRef.current = startLateral
+      cornerDriftRef.current = 0
+      peerSlowRef.current = 0
+      passSideRef.current = 0
+      oilSpinRef.current = 0
+      oilAngleRef.current = 0
+      waterLatRef.current = 0
+      hitLatVelRef.current = 0
+    }
 
     const onOilSpin = oilSpinRef.current > 0
+    const recovering =
+      onOilSpin || Math.abs(lateralOutRef.current) > asphaltHalf
 
     // Shared MIDI / slider pace — equal capability across vehicle models
     const baseSpeed = speed01ToBase(speedRef.current)
 
-    // Turn sharpness from angle between nearby tangents (0 = straight, ~1 = hairpin)
-    const tA = (tNow - 0.01 + 1) % 1
-    const tB = (tNow + 0.01) % 1
-    const tanA = curve.getTangentAt(tA).clone()
-    const tanB = curve.getTangentAt(tB).clone()
-    tanA.y = 0
-    tanB.y = 0
-    if (tanA.lengthSq() > 1e-8) tanA.normalize()
-    if (tanB.lengthSq() > 1e-8) tanB.normalize()
-    const turnSigned = tanA.x * tanB.z - tanA.z * tanB.x
-    const turnDot = THREE.MathUtils.clamp(tanA.dot(tanB), -1, 1)
-    const turnAngle = Math.acos(turnDot) // radians over ~2% of lap
-    const turnFactor = THREE.MathUtils.smoothstep(0.04, 0.55, turnAngle)
+    // Local + look-ahead bend so sharp corners register (wide ±0.01 was too soft)
+    const lookNear = 0.0035
+    const lookFar = 0.022
+    const tanFlat = curve.getTangentAt(tNow).clone()
+    tanFlat.y = 0
+    if (tanFlat.lengthSq() > 1e-8) tanFlat.normalize()
+    else tanFlat.set(0, 0, 1)
+    const tNear = (tNow + (reverseDirection ? -lookNear : lookNear) + 1) % 1
+    const tFar = (tNow + (reverseDirection ? -lookFar : lookFar) + 1) % 1
+    const tanNear = curve.getTangentAt(tNear).clone()
+    const tanFar = curve.getTangentAt(tFar).clone()
+    tanNear.y = 0
+    tanFar.y = 0
+    if (tanNear.lengthSq() > 1e-8) tanNear.normalize()
+    if (tanFar.lengthSq() > 1e-8) tanFar.normalize()
+    if (reverseDirection) {
+      tanFlat.negate()
+      tanNear.negate()
+      tanFar.negate()
+    }
+    const turnNear = Math.acos(
+      THREE.MathUtils.clamp(tanFlat.dot(tanNear), -1, 1),
+    )
+    const turnFar = Math.acos(
+      THREE.MathUtils.clamp(tanFlat.dot(tanFar), -1, 1),
+    )
+    const turnFactor = Math.max(
+      THREE.MathUtils.smoothstep(0.012, 0.2, turnNear),
+      THREE.MathUtils.smoothstep(0.035, 0.36, turnFar),
+    )
+    const turnSigned = tanFlat.x * tanFar.z - tanFlat.z * tanFar.x
 
     const provisionalMul =
       (1 + boostRef.current * 0.85) *
@@ -678,30 +711,30 @@ export function Vehicle({
       (1 - peerSlowRef.current)
     const provisionalSpeed = baseSpeed * provisionalMul
 
-    // Max safe progress-speed for this bend: straights allow full MIDI; hairpins ~0.08
-    const maxSafe = THREE.MathUtils.lerp(0.3, 0.075, turnFactor)
-    const ratio = provisionalSpeed / Math.max(maxSafe, 0.04)
-    const outward = Math.sign(turnSigned || 1) * (reverseDirection ? -1 : 1)
+    // Straights forgive max MIDI; sharp bends slide well below max
+    const maxSafe = THREE.MathUtils.lerp(0.3, 0.048, turnFactor)
+    const ratio = provisionalSpeed / Math.max(maxSafe, 0.035)
+    const outward = Math.sign(turnSigned || 1)
 
-    if (canMove && ratio > 1.08 && oilSpinRef.current <= 0) {
-      // Excess speed² pushes outward — soft grass first, then spin if far off
+    if (canMove && ratio > 1.04 && oilSpinRef.current <= 0) {
       const excess = ratio - 1
-      cornerDriftRef.current += outward * excess * excess * 0.75 * delta * 60
-    } else if (oilSpinRef.current <= 0) {
+      cornerDriftRef.current +=
+        outward * (0.4 * excess + 1.25 * excess * excess) * delta * 60
+    } else if (canMove && oilSpinRef.current <= 0) {
       cornerDriftRef.current = THREE.MathUtils.damp(
         cornerDriftRef.current,
         0,
-        recovering ? 3.4 : 2.2,
+        recovering ? 2.6 : 1.7,
         delta,
       )
     }
 
     const absLatNow = Math.abs(lateralOutRef.current)
-    const farOff = absLatNow > asphaltHalf + 0.4
+    const farOff = absLatNow > asphaltHalf + 0.35
     if (
       canMove &&
       farOff &&
-      ratio > 1.15 &&
+      ratio > 1.12 &&
       oilSpinRef.current <= 0 &&
       spinCooldownRef.current <= 0
     ) {
@@ -710,7 +743,6 @@ export function Vehicle({
     }
 
     if (oilSpinRef.current > 0) {
-      // Bleed drift while spinning; pull toward asphalt edge after
       cornerDriftRef.current = THREE.MathUtils.damp(
         cornerDriftRef.current,
         Math.sign(cornerDriftRef.current || outward) * asphaltHalf * 0.85,
@@ -723,6 +755,16 @@ export function Vehicle({
       -lateralLimit + 0.2,
       lateralLimit - 0.2,
     )
+
+    // Don't fight drift by yanking hard to center while overspeeding
+    if (canMove && Math.abs(cornerDriftRef.current) > 0.25 && ratio > 1.05) {
+      avoidLatRef.current = THREE.MathUtils.damp(
+        avoidLatRef.current,
+        avoidLatRef.current * 0.65,
+        1.4,
+        delta,
+      )
+    }
 
     const onGrass = absLatNow > asphaltHalf
 
@@ -742,7 +784,7 @@ export function Vehicle({
         finishedRef.current = true
         // Snap just past the line so we don't re-cross
         tRef.current = reverseDirection ? 0.995 : 0.005
-        onFinished?.(vehicleId)
+        onFinished?.(vehicleId, racerIndex)
       }
     }
 
@@ -999,7 +1041,7 @@ export function Vehicle({
       slot.lap = lapRef.current
       slot.lateral = clampedLateral
       slot.radius = carRadius
-      slot.active = true
+      slot.active = canMove
       peersRef.current[racerIndex] = slot
     }
 

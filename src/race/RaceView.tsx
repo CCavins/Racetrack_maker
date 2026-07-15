@@ -81,7 +81,7 @@ function SceneContent({
   chaseIndex: number
   showBeacons: boolean
   onLap: (n: number, vehicleId: VehicleId) => void
-  onFinished: (vehicleId: VehicleId) => void
+  onFinished: (vehicleId: VehicleId, racerIndex: number) => void
   stateRefs: React.MutableRefObject<VehicleState>[]
   peersRef: React.MutableRefObject<PeerSnapshot[]>
   speed01Refs: React.MutableRefObject<number>[]
@@ -326,9 +326,11 @@ export function RaceView() {
   /** null = not started; number = 3/2/1; 'go' = GO flash; 'racing' | 'done' */
   const [countdown, setCountdown] = useState<number | 'go' | null>(null)
   const [racing, setRacing] = useState(false)
-  const [winnerId, setWinnerId] = useState<VehicleId | null>(null)
-  const [finishedIds, setFinishedIds] = useState<VehicleId[]>([])
+  const [finishOrder, setFinishOrder] = useState<
+    { id: VehicleId; index: number; timeMs: number }[]
+  >([])
   const lapStartRef = useRef(performance.now())
+  const raceStartRef = useRef(performance.now())
   const dragRef = useRef<{ x: number; orbit: number } | null>(null)
   const chaseOrbitRef = useRef(0)
   chaseOrbitRef.current = chaseOrbit
@@ -363,8 +365,7 @@ export function RaceView() {
     }))
     setChaseIndex(0)
     setBoard([])
-    setFinishedIds([])
-    setWinnerId(null)
+    setFinishOrder([])
     setRacing(false)
     setCountdown(null)
     setSceneReady(false)
@@ -397,7 +398,9 @@ export function RaceView() {
       if (cancelled) return
       setCountdown(null)
       setRacing(true)
-      lapStartRef.current = performance.now()
+      const now = performance.now()
+      lapStartRef.current = now
+      raceStartRef.current = now
     })()
     return () => {
       cancelled = true
@@ -418,14 +421,22 @@ export function RaceView() {
     [recordLapTime],
   )
 
-  const onFinished = useCallback((vehicleId: VehicleId) => {
-    setFinishedIds((prev) => {
-      if (prev.includes(vehicleId)) return prev
-      const next = [...prev, vehicleId]
-      if (prev.length === 0) setWinnerId(vehicleId)
-      return next
-    })
-  }, [])
+  const onFinished = useCallback(
+    (vehicleId: VehicleId, racerIndex: number) => {
+      setFinishOrder((prev) => {
+        if (prev.some((r) => r.index === racerIndex)) return prev
+        return [
+          ...prev,
+          {
+            id: vehicleId,
+            index: racerIndex,
+            timeMs: performance.now() - raceStartRef.current,
+          },
+        ]
+      })
+    },
+    [],
+  )
 
   // Poll leaderboard from shared state refs (~8 Hz)
   useEffect(() => {
@@ -436,13 +447,15 @@ export function RaceView() {
       if (now - last > 120) {
         last = now
         const reverse = design.reverseDirection
+        const finishedSet = new Set(finishOrder.map((r) => r.index))
         const rows: BoardRow[] = racers.map((id, index) => {
           const s = stateRefs[index]?.current
           const lap = s?.lap ?? 0
           const t = s?.t ?? 0
-          const done = finishedIds.includes(id)
+          const done = finishedSet.has(index)
+          const finishPlace = finishOrder.findIndex((r) => r.index === index)
           const progress = done
-            ? lapCount + 1
+            ? lapCount + 1 - finishPlace * 0.001
             : reverse
               ? lap + (1 - t)
               : lap + t
@@ -471,7 +484,7 @@ export function RaceView() {
     racers,
     stateRefs,
     design.reverseDirection,
-    finishedIds,
+    finishOrder,
     lapCount,
   ])
 
@@ -537,6 +550,14 @@ export function RaceView() {
       : 'Vehicle'
   const chasePlace =
     board.find((r) => r.index === chaseIndex)?.place ?? null
+  const raceComplete =
+    racers.length > 0 && finishOrder.length >= racers.length
+  const fmtRace = (ms: number) => {
+    const s = ms / 1000
+    return s >= 60
+      ? `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, '0')}`
+      : `${s.toFixed(2)}s`
+  }
 
   return (
     <div className="race-view" ref={wrapRef}>
@@ -588,17 +609,50 @@ export function RaceView() {
         </div>
       )}
 
-      {winnerId && (
-        <div className="race-winner-banner">
-          <p className="race-winner-title">Winner</p>
-          <p className="race-winner-name">{VEHICLE_META[winnerId].label}</p>
-          <p className="race-winner-sub">
-            {finishedIds.length}/{racers.length} finished · {lapCount} laps
-          </p>
+      {raceComplete && (
+        <div className="race-results" role="dialog" aria-label="Race results">
+          <div className="race-results-card">
+            <p className="race-results-kicker">Final standings</p>
+            <h2 className="race-results-title">Leaderboard</h2>
+            <p className="race-results-sub">{lapCount} laps</p>
+            <ol className="race-results-list">
+              {finishOrder.map((row, place) => {
+                const marker =
+                  RACER_MARKER_COLORS[row.index] ?? RACER_MARKER_COLORS[0]
+                return (
+                  <li
+                    key={`${row.id}-${row.index}`}
+                    className={place === 0 ? 'first' : undefined}
+                    style={{ borderLeftColor: marker }}
+                  >
+                    <span className="race-results-place">P{place + 1}</span>
+                    <span
+                      className="race-results-dot"
+                      style={{ background: marker }}
+                      aria-hidden
+                    />
+                    <span className="race-results-name">
+                      {VEHICLE_META[row.id].label}
+                    </span>
+                    <span className="race-results-time">
+                      {fmtRace(row.timeMs)}
+                    </span>
+                  </li>
+                )
+              })}
+            </ol>
+            <button
+              type="button"
+              className="race-results-restart"
+              onClick={() => setStep('draw')}
+            >
+              Start over
+            </button>
+          </div>
         </div>
       )}
 
-      <CarEdgeHint active={!chaseCam && sceneReady} />
+      <CarEdgeHint active={!chaseCam && sceneReady && !raceComplete} />
 
       <div className="race-hud">
         <div className="hud-left">
@@ -624,7 +678,7 @@ export function RaceView() {
               {board.map((row) => {
                 const marker =
                   RACER_MARKER_COLORS[row.index] ?? RACER_MARKER_COLORS[0]
-                const done = finishedIds.includes(row.id)
+                const done = finishOrder.some((r) => r.index === row.index)
                 const lapLabel = done
                   ? 'Done'
                   : `${Math.min(row.lap + 1, lapCount)}/${lapCount}`
