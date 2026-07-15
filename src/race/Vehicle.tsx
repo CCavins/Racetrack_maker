@@ -182,7 +182,7 @@ function LoadedVehicle({
       // Mesh is stored length-along-X and lying on its side. Stand up, then
       // point the nose along local −Z (lookAt forward).
       c.rotation.set(0, 0, 0)
-      c.rotateZ(-Math.PI / 2)
+      c.rotateZ(Math.PI / 2)
       c.rotateY(Math.PI / 2)
     } else {
       // Higgsfield / Kenney: length often along X. lookAt aims local -Z down the path.
@@ -197,7 +197,6 @@ function LoadedVehicle({
         thunderbolt: Math.PI,
         cheetah: Math.PI,
         lct: Math.PI,
-        cb750: Math.PI,
       }
       c.rotation.y += facingFlip[id] ?? 0
     }
