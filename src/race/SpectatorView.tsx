@@ -41,24 +41,24 @@ function OverviewCamera({
     const cz = (minZ + maxZ) / 2
     const halfW = Math.max((maxX - minX) / 2, 4)
     const halfD = Math.max((maxZ - minZ) / 2, 4)
-    // Cover track corners + roadside props
-    const radius = Math.hypot(halfW, halfD) * 1.22
+    // Cover track corners + a slim roadside margin
+    const radius = Math.hypot(halfW, halfD) * 1.08
 
     const dir = new THREE.Vector3(0.42, 0.78, 0.52).normalize()
-    persp.fov = 40
+    persp.fov = 38
     const vFov = THREE.MathUtils.degToRad(persp.fov)
     const aspect = Math.max(size.width / Math.max(size.height, 1), 0.5)
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect)
 
-    // Fit a sphere of `radius` in both axes; pull back a bit more for HUD chrome
+    // Fit the course in view without oversized empty padding
     const distV = radius / Math.sin(vFov / 2)
     const distH = radius / Math.sin(hFov / 2)
-    const dist = Math.max(distV, distH, 32) * 1.08
+    const dist = Math.max(distV, distH, 28)
 
     const center = new THREE.Vector3(cx, 0, cz)
     persp.position.copy(center).addScaledVector(dir, dist)
-    // Bias look toward the far side so the near (screen-bottom) edge isn't clipped
-    const look = center.clone().addScaledVector(dir, -radius * 0.12)
+    // Slight far-side bias so the near (screen-bottom) edge stays in frame
+    const look = center.clone().addScaledVector(dir, -radius * 0.08)
     look.y = 0.35
     persp.near = 0.5
     persp.far = Math.max(320, dist * 5)
@@ -170,7 +170,7 @@ function SpectatorScene({
 
   const pad = 18
   const { minX, maxX, minZ, maxZ } = track.bounds
-  const edge = track.roadWidth * 0.65 + 2.5
+  const edge = track.roadWidth * 0.5 + 1.5
   const groundSize = Math.max(maxX - minX, maxZ - minZ) + pad * 2
   const span = Math.max(maxX - minX, maxZ - minZ, 20)
 
