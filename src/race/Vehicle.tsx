@@ -172,11 +172,15 @@ function LoadedVehicle({
     const size2 = new THREE.Vector3()
     box2.getSize(size2)
 
-    // Higgsfield image-to-3d meshes usually have length along X.
-    // Three.js lookAt aims local -Z down the path, so align length to Z.
+    // Higgsfield / Kenney: length often along X. lookAt aims local -Z down the path.
     if (size2.x > size2.z) {
       c.rotation.y = Math.PI / 2
     }
+    // Some Sketchfab exports face the opposite way after axis align
+    const facingFlip: Partial<Record<VehicleId, number>> = {
+      muscle: Math.PI,
+    }
+    c.rotation.y += facingFlip[id] ?? 0
 
     root.add(c)
     const box3 = new THREE.Box3().setFromObject(root)
