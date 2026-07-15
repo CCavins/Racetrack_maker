@@ -344,6 +344,7 @@ export function RaceView() {
   const chaseOrbitRef = useRef(0)
   chaseOrbitRef.current = chaseOrbit
   const wrapRef = useRef<HTMLDivElement>(null)
+  const canvasHostRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setMidiListening(design.midiEnabled !== false)
@@ -522,28 +523,18 @@ export function RaceView() {
     racers.length > 0 && finishOrder.length >= racers.length
 
   useEffect(() => {
-    const el = wrapRef.current
+    const el = canvasHostRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
-      if (!chaseCam) return
-      // Don't zoom while overlays steal focus
-      if (midiOpen || raceComplete) return
-      const t = e.target as HTMLElement
-      if (t.closest('.midi-panel-backdrop, .race-results, .race-hud')) return
+      if (!chaseCam || midiOpen || raceComplete) return
       e.preventDefault()
       setChaseDistance((d) =>
         Math.min(22, Math.max(3.5, d + e.deltaY * 0.012)),
       )
     }
-    const uiBlocked = (target: EventTarget | null) => {
-      if (!(target instanceof Element)) return true
-      // Only orbit/peek from the WebGL canvas — never from HUD/overlays
-      if (target.closest('canvas')) return false
-      return true
-    }
     const onPointerDown = (e: PointerEvent) => {
       if (!chaseCam || midiOpen || raceComplete) return
-      if (uiBlocked(e.target)) return
+      if (e.button !== 0) return
       dragRef.current = { x: e.clientX, orbit: chaseOrbitRef.current }
       el.setPointerCapture(e.pointerId)
     }
@@ -594,33 +585,40 @@ export function RaceView() {
 
   return (
     <div className="race-view" ref={wrapRef}>
-      <Canvas
-        shadows
-        camera={{ position: [12, 14, 18], fov: 50, near: 0.1, far: 200 }}
-        dpr={[1, 1.75]}
-      >
-        <Suspense fallback={null}>
-          <SceneContent
-            chaseCam={chaseCam}
-            chaseDistance={chaseDistance}
-            chaseOrbit={chaseOrbit}
-            chaseIndex={chaseIndex}
-            showBeacons={showBeacons}
-            onLap={onLap}
-            onFinished={onFinished}
-            stateRefs={stateRefs}
-            peersRef={peersRef}
-            speed01Refs={speed01Refs}
-            countdownLatchRefs={countdownLatchRefs}
-            throttleFrozen={!racing}
-            racers={racers}
-            running={sceneReady}
-            motionEnabled={racing}
-            lapCount={lapCount}
-            onReady={markReady}
-          />
-        </Suspense>
-      </Canvas>
+      <div className="race-canvas-host" ref={canvasHostRef}>
+        <Canvas
+          shadows
+          // Keep R3F pointer events on the canvas host only — otherwise they
+          // swallow clicks on HUD / MIDI / results overlays in this same parent.
+          eventSource={canvasHostRef}
+          eventPrefix="client"
+          camera={{ position: [12, 14, 18], fov: 50, near: 0.1, far: 200 }}
+          dpr={[1, 1.75]}
+          style={{ width: '100%', height: '100%' }}
+        >
+          <Suspense fallback={null}>
+            <SceneContent
+              chaseCam={chaseCam}
+              chaseDistance={chaseDistance}
+              chaseOrbit={chaseOrbit}
+              chaseIndex={chaseIndex}
+              showBeacons={showBeacons}
+              onLap={onLap}
+              onFinished={onFinished}
+              stateRefs={stateRefs}
+              peersRef={peersRef}
+              speed01Refs={speed01Refs}
+              countdownLatchRefs={countdownLatchRefs}
+              throttleFrozen={!racing}
+              racers={racers}
+              running={sceneReady}
+              motionEnabled={racing}
+              lapCount={lapCount}
+              onReady={markReady}
+            />
+          </Suspense>
+        </Canvas>
+      </div>
 
       {!sceneReady && (
         <div className="generating-overlay race-loading-overlay">
@@ -809,9 +807,11 @@ export function RaceView() {
         <div className="hud-right">
           <button
             type="button"
+            data-midi-toggle
             className={`hud-btn ${midiOpen ? 'on' : ''}`}
             onClick={() => setMidiOpen((v) => !v)}
             title="MIDI knobs and race speeds"
+            aria-expanded={midiOpen}
           >
             MIDI / Speeds
           </button>

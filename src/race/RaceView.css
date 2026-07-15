@@ -4,12 +4,24 @@
   height: 100%;
   overflow: hidden;
   animation: race-in 0.55s ease-out;
+}
+
+.race-canvas-host {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   touch-action: none;
   cursor: grab;
 }
 
-.race-view:active {
+.race-canvas-host:active {
   cursor: grabbing;
+}
+
+.race-canvas-host canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .race-loading-overlay {
@@ -283,24 +295,26 @@
   transition: opacity 0.15s ease;
 }
 
-/* —— MIDI / Speeds panel —— */
+/* —— MIDI / Speeds panel (dropdown, not a blocking modal) —— */
 .midi-panel-backdrop {
   position: absolute;
   inset: 0;
-  z-index: 30;
-  pointer-events: auto;
-  background: rgba(12, 14, 16, 0.45);
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding: 4.5rem 1.25rem 1.25rem;
+  z-index: 40;
+  pointer-events: none;
+  background: transparent;
+  display: block;
+  padding: 0;
 }
 
 .midi-panel {
-  width: min(380px, 100%);
-  max-height: calc(100% - 1rem);
+  pointer-events: auto;
+  position: absolute;
+  top: 3.6rem;
+  right: 1.25rem;
+  width: min(380px, calc(100% - 2.5rem));
+  max-height: calc(100% - 4.5rem);
   overflow: auto;
-  background: rgba(22, 24, 26, 0.94);
+  background: rgba(22, 24, 26, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(12px);
   padding: 1rem 1.1rem 1.15rem;

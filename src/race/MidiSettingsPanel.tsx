@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useMidiControl } from '../midi/midiControlStore'
 import { formatBinding, MIDI_SLOT_COUNT } from '../midi/midiTypes'
 import { VEHICLE_META, type VehicleId } from '../types'
@@ -9,9 +9,17 @@ type Props = {
   open: boolean
   onClose: () => void
   racers: VehicleId[]
+  /** Selector for the toggle that opens this panel (ignored for outside-click) */
+  toggleSelector?: string
 }
 
-export function MidiSettingsPanel({ open, onClose, racers }: Props) {
+export function MidiSettingsPanel({
+  open,
+  onClose,
+  racers,
+  toggleSelector = '[data-midi-toggle]',
+}: Props) {
+  const panelRef = useRef<HTMLDivElement>(null)
   const {
     speed01,
     rawCc,
@@ -29,13 +37,24 @@ export function MidiSettingsPanel({ open, onClose, racers }: Props) {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      // Learning uses Esc to cancel map — don't also close the panel
       if (learnSlot !== null) return
       onClose()
     }
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target
+      if (!(t instanceof Element)) return
+      if (panelRef.current?.contains(t)) return
+      if (t.closest(toggleSelector)) return
+      onClose()
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose, learnSlot])
+    // Capture so R3F / race-view handlers cannot swallow the close
+    window.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [open, onClose, learnSlot, toggleSelector])
 
   if (!open) return null
 
@@ -48,22 +67,24 @@ export function MidiSettingsPanel({ open, onClose, racers }: Props) {
         : 'Connecting MIDI…'
 
   return (
-    <div
-      className="midi-panel-backdrop"
-      role="presentation"
-      onClick={onClose}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
+    <div className="midi-panel-backdrop" role="presentation">
       <div
+        ref={panelRef}
         className="midi-panel"
         role="dialog"
         aria-label="MIDI and race speeds"
-        onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="midi-panel-head">
           <h2 className="midi-panel-title">MIDI / Speeds</h2>
-          <button type="button" className="hud-btn" onClick={onClose}>
+          <button
+            type="button"
+            className="hud-btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              onClose()
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
             Close
           </button>
         </div>
