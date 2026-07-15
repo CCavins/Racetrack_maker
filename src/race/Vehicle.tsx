@@ -184,8 +184,16 @@ function LoadedVehicle({
     c.rotation.y += facingFlip[id] ?? 0
 
     root.add(c)
+    // Sketchfab exports (e.g. cruiser) can be far from origin — recenter XZ
+    // so the path / chase marker line up with the body, then plant on the ground.
     const box3 = new THREE.Box3().setFromObject(root)
-    root.position.y -= box3.min.y
+    const center = new THREE.Vector3()
+    box3.getCenter(center)
+    c.position.x -= center.x
+    c.position.z -= center.z
+    c.updateMatrixWorld(true)
+    const box4 = new THREE.Box3().setFromObject(root)
+    root.position.y -= box4.min.y
 
     if (look === 'paint') {
       recolorBodyMaterials(root, color, null)
