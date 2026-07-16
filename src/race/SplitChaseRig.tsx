@@ -12,22 +12,23 @@ type Props = {
   chaseOrbit: number
 }
 
-function restoreFullView(
-  gl: THREE.WebGLRenderer,
-  width: number,
-  height: number,
-) {
+const _buf = new THREE.Vector2()
+
+function restoreFullView(gl: THREE.WebGLRenderer) {
+  // Viewport/scissor are in drawing-buffer pixels (CSS size × DPR).
+  // Restoring with R3F `size` leaves most of the buffer stale — the frozen
+  // split overlay after leaving Split mode.
+  gl.getDrawingBufferSize(_buf)
   gl.setScissorTest(false)
-  gl.setViewport(0, 0, width, height)
-  gl.setScissor(0, 0, width, height)
+  gl.setViewport(0, 0, _buf.x, _buf.y)
+  gl.setScissor(0, 0, _buf.x, _buf.y)
   gl.autoClear = true
 }
 
 /**
  * One shared scene, N chase cameras via scissor viewports.
- * Renders after R3F's default pass so panes cover the full canvas.
- * Always restores full viewport afterward — otherwise Chase/Orbit only
- * redraws the last pane and the rest of the split frame freezes on screen.
+ * Takes over after R3F's default pass while enabled, and always restores
+ * the full drawing-buffer viewport so Chase/Orbit can redraw the canvas.
  */
 export function SplitChaseRig({
   enabled,
@@ -36,7 +37,7 @@ export function SplitChaseRig({
   chaseDistance,
   chaseOrbit,
 }: Props) {
-  const { gl, scene, size } = useThree()
+  const { gl, scene } = useThree()
   const cameras = useMemo(
     () =>
       Array.from({ length: 4 }, () => {
@@ -51,26 +52,34 @@ export function SplitChaseRig({
 
   useLayoutEffect(() => {
     if (!enabled) {
-      restoreFullView(gl, size.width, size.height)
+      restoreFullView(gl)
     }
-  }, [enabled, gl, size.width, size.height])
+    return () => {
+      restoreFullView(gl)
+    }
+  }, [enabled, gl])
+
+  // Before R3F's default render: clear leftover scissor state from Split.
+  useFrame(() => {
+    if (!enabled && wasEnabled.current) {
+      restoreFullView(gl)
+      wasEnabled.current = false
+    }
+  }, -1)
 
   useFrame((_, delta) => {
-    if (!enabled || count < 1) {
-      if (wasEnabled.current) {
-        restoreFullView(gl, size.width, size.height)
-        wasEnabled.current = false
-      }
-      return
-    }
+    if (!enabled || count < 1) return
 
     wasEnabled.current = true
-    const panes = chasePaneLayout(count, size.width, size.height)
+    gl.getDrawingBufferSize(_buf)
+    const bw = _buf.x
+    const bh = _buf.y
+    const panes = chasePaneLayout(count, bw, bh)
+
     gl.autoClear = false
     gl.setScissorTest(true)
-    // Clear the whole canvas once, then draw each pane
-    gl.setViewport(0, 0, size.width, size.height)
-    gl.setScissor(0, 0, size.width, size.height)
+    gl.setViewport(0, 0, bw, bh)
+    gl.setScissor(0, 0, bw, bh)
     gl.clear(true, true, true)
 
     for (let i = 0; i < panes.length; i++) {
@@ -100,7 +109,7 @@ export function SplitChaseRig({
       gl.render(scene, cam)
     }
 
-    restoreFullView(gl, size.width, size.height)
+    restoreFullView(gl)
   }, 1)
 
   return null

@@ -221,13 +221,15 @@ function SceneContent({
         <CarScreenProjector stateRef={chaseState} />
       )}
 
-      <SplitChaseRig
-        enabled={splitCam && racers.length > 0}
-        stateRefs={stateRefs}
-        count={racers.length}
-        chaseDistance={chaseDistance}
-        chaseOrbit={chaseOrbit}
-      />
+      {splitCam && racers.length > 0 && (
+        <SplitChaseRig
+          enabled
+          stateRefs={stateRefs}
+          count={racers.length}
+          chaseDistance={chaseDistance}
+          chaseOrbit={chaseOrbit}
+        />
+      )}
 
       <SceneReady onReady={onReady} />
     </>
