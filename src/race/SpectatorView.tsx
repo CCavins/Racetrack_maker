@@ -70,7 +70,7 @@ function OverviewCamera({
 }
 
 /** Render a touch behind live poses so BC jitter doesn’t flash the map. */
-const MAP_POSE_DELAY_MS = 70
+const MAP_POSE_DELAY_MS = 100
 const MAP_POSE_SAMPLES = 12
 
 type PoseSample = {
