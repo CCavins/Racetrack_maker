@@ -69,6 +69,26 @@ function OverviewCamera({
   return null
 }
 
+/** Render a touch behind live poses so BC jitter doesn’t flash the map. */
+const MAP_POSE_DELAY_MS = 70
+const MAP_POSE_SAMPLES = 12
+
+type PoseSample = {
+  t: number
+  x: number
+  y: number
+  z: number
+  qx: number
+  qy: number
+  qz: number
+  qw: number
+}
+
+const _posA = new THREE.Vector3()
+const _posB = new THREE.Vector3()
+const _quatA = new THREE.Quaternion()
+const _quatB = new THREE.Quaternion()
+
 function SpectateRacer({
   index,
   vehicleId,
@@ -88,48 +108,70 @@ function SpectateRacer({
 }) {
   const group = useRef<THREE.Group>(null)
   const visible = useRef(false)
-  const targetPos = useRef(new THREE.Vector3())
-  const targetQuat = useRef(new THREE.Quaternion())
   const lastSeq = useRef(-1)
+  const samples = useRef<PoseSample[]>([])
 
-  useFrame((_, rawDelta) => {
+  useFrame(() => {
     const g = group.current
     if (!g) return
     const bridge = getRacePoseBridge()
-    if (!bridge || index >= bridge.count) return
-    const o = index * POSE_STRIDE
-    if (!bridge.data[o + 9]) return
+    if (!bridge) return
 
-    // Pull a new target only when the bridge advances (no double-apply flicker)
-    if (bridge.seq !== lastSeq.current) {
-      lastSeq.current = bridge.seq
-      targetPos.current.set(
-        bridge.data[o],
-        bridge.data[o + 1],
-        bridge.data[o + 2],
-      )
-      targetQuat.current.set(
-        bridge.data[o + 3],
-        bridge.data[o + 4],
-        bridge.data[o + 5],
-        bridge.data[o + 6],
-      )
-      if (!visible.current) {
-        g.position.copy(targetPos.current)
-        g.quaternion.copy(targetQuat.current)
-        visible.current = true
-        g.visible = true
-        return
+    // Keep showing the last smooth pose through brief packet gaps
+    if (index < bridge.count) {
+      const o = index * POSE_STRIDE
+      if (bridge.data[o + 9] && bridge.seq !== lastSeq.current) {
+        lastSeq.current = bridge.seq
+        const list = samples.current
+        list.push({
+          t: performance.now(),
+          x: bridge.data[o],
+          y: bridge.data[o + 1],
+          z: bridge.data[o + 2],
+          qx: bridge.data[o + 3],
+          qy: bridge.data[o + 4],
+          qz: bridge.data[o + 5],
+          qw: bridge.data[o + 6],
+        })
+        if (list.length > MAP_POSE_SAMPLES) {
+          list.splice(0, list.length - MAP_POSE_SAMPLES)
+        }
       }
     }
 
-    if (!visible.current) return
+    const list = samples.current
+    if (list.length === 0) return
 
-    const delta = Math.min(rawDelta, 1 / 20)
-    // Smooth follow — hides sparse BC ticks without rubber-banding to a second source
-    const blend = 1 - Math.exp(-14 * delta)
-    g.position.lerp(targetPos.current, blend)
-    g.quaternion.slerp(targetQuat.current, blend)
+    const renderAt = performance.now() - MAP_POSE_DELAY_MS
+    let i = 0
+    while (i < list.length - 1 && list[i + 1].t <= renderAt) i++
+
+    const a = list[i]
+    const b = list[Math.min(i + 1, list.length - 1)]
+
+    if (!visible.current) {
+      // Wait until the delayed clock reaches the first sample
+      if (renderAt < a.t) return
+      g.position.set(a.x, a.y, a.z)
+      g.quaternion.set(a.qx, a.qy, a.qz, a.qw)
+      visible.current = true
+      g.visible = true
+      return
+    }
+
+    if (a === b || b.t <= a.t) {
+      g.position.set(a.x, a.y, a.z)
+      g.quaternion.set(a.qx, a.qy, a.qz, a.qw)
+      return
+    }
+
+    const u = THREE.MathUtils.clamp((renderAt - a.t) / (b.t - a.t), 0, 1)
+    _posA.set(a.x, a.y, a.z)
+    _posB.set(b.x, b.y, b.z)
+    _quatA.set(a.qx, a.qy, a.qz, a.qw)
+    _quatB.set(b.qx, b.qy, b.qz, b.qw)
+    g.position.lerpVectors(_posA, _posB, u)
+    g.quaternion.copy(_quatA).slerp(_quatB, u)
   })
 
   return (
@@ -376,6 +418,7 @@ export function SpectatorView() {
   useEffect(() => {
     let raf = 0
     let lastHud = 0
+    let emptySince: number | null = null
     const tick = (now: number) => {
       const bridge = getRacePoseBridge()
       if (bridge && now - lastHud > 200) {
@@ -393,13 +436,36 @@ export function SpectatorView() {
           })
         }
         rows.sort((a, b) => a.place - b.place)
-        setBoard(rows)
-        setMeta({
-          racing: bridge.racing,
-          countdown: bridge.countdown,
-          lapCount: bridge.lapCount,
-          linked: rows.length > 0,
-        })
+        if (rows.length > 0) {
+          emptySince = null
+          setBoard(rows)
+          setMeta({
+            racing: bridge.racing,
+            countdown: bridge.countdown,
+            lapCount: bridge.lapCount,
+            linked: true,
+          })
+        } else {
+          // Ignore brief gaps so the HUD doesn’t flash “Waiting…”
+          if (emptySince == null) emptySince = now
+          if (now - emptySince > 450) {
+            setBoard([])
+            setMeta((m) => ({
+              ...m,
+              racing: bridge.racing,
+              countdown: bridge.countdown,
+              lapCount: bridge.lapCount,
+              linked: false,
+            }))
+          } else {
+            setMeta((m) => ({
+              ...m,
+              racing: bridge.racing,
+              countdown: bridge.countdown,
+              lapCount: bridge.lapCount,
+            }))
+          }
+        }
       }
       raf = requestAnimationFrame(tick)
     }
