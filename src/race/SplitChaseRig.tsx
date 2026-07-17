@@ -12,23 +12,25 @@ type Props = {
   chaseOrbit: number
 }
 
-const _buf = new THREE.Vector2()
+const _size = new THREE.Vector2()
 
+/**
+ * Three.js setViewport/setScissor take *logical* (CSS) pixels and multiply
+ * by the renderer pixel ratio internally. Do not pass drawing-buffer size.
+ */
 function restoreFullView(gl: THREE.WebGLRenderer) {
-  // Viewport/scissor are in drawing-buffer pixels (CSS size × DPR).
-  // Restoring with R3F `size` leaves most of the buffer stale — the frozen
-  // split overlay after leaving Split mode.
-  gl.getDrawingBufferSize(_buf)
+  gl.getSize(_size)
   gl.setScissorTest(false)
-  gl.setViewport(0, 0, _buf.x, _buf.y)
-  gl.setScissor(0, 0, _buf.x, _buf.y)
+  gl.setViewport(0, 0, _size.x, _size.y)
+  gl.setScissor(0, 0, _size.x, _size.y)
   gl.autoClear = true
 }
 
 /**
  * One shared scene, N chase cameras via scissor viewports.
- * Takes over after R3F's default pass while enabled, and always restores
- * the full drawing-buffer viewport so Chase/Orbit can redraw the canvas.
+ * Renders after R3F's default pass so panes cover the full canvas.
+ * Always restores full logical viewport afterward — otherwise Chase/Orbit
+ * only redraws the last pane and the rest of the split frame freezes.
  */
 export function SplitChaseRig({
   enabled,
@@ -37,7 +39,7 @@ export function SplitChaseRig({
   chaseDistance,
   chaseOrbit,
 }: Props) {
-  const { gl, scene } = useThree()
+  const { gl, scene, camera } = useThree()
   const cameras = useMemo(
     () =>
       Array.from({ length: 4 }, () => {
@@ -51,18 +53,25 @@ export function SplitChaseRig({
   const wasEnabled = useRef(false)
 
   useLayoutEffect(() => {
-    if (!enabled) {
-      restoreFullView(gl)
-    }
     return () => {
       restoreFullView(gl)
+      if (camera instanceof THREE.PerspectiveCamera) {
+        gl.getSize(_size)
+        camera.aspect = _size.x / Math.max(_size.y, 1)
+        camera.updateProjectionMatrix()
+      }
     }
-  }, [enabled, gl])
+  }, [gl, camera])
 
   // Before R3F's default render: clear leftover scissor state from Split.
   useFrame(() => {
     if (!enabled && wasEnabled.current) {
       restoreFullView(gl)
+      if (camera instanceof THREE.PerspectiveCamera) {
+        gl.getSize(_size)
+        camera.aspect = _size.x / Math.max(_size.y, 1)
+        camera.updateProjectionMatrix()
+      }
       wasEnabled.current = false
     }
   }, -1)
@@ -71,15 +80,15 @@ export function SplitChaseRig({
     if (!enabled || count < 1) return
 
     wasEnabled.current = true
-    gl.getDrawingBufferSize(_buf)
-    const bw = _buf.x
-    const bh = _buf.y
-    const panes = chasePaneLayout(count, bw, bh)
+    gl.getSize(_size)
+    const w = _size.x
+    const h = _size.y
+    const panes = chasePaneLayout(count, w, h)
 
     gl.autoClear = false
     gl.setScissorTest(true)
-    gl.setViewport(0, 0, bw, bh)
-    gl.setScissor(0, 0, bw, bh)
+    gl.setViewport(0, 0, w, h)
+    gl.setScissor(0, 0, w, h)
     gl.clear(true, true, true)
 
     for (let i = 0; i < panes.length; i++) {
