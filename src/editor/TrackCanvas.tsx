@@ -211,6 +211,7 @@ export function TrackCanvas() {
     setPath,
     updateControlPoint,
     insertControlPoint,
+    removeControlPoint,
     scaleDesignToCanvas,
     canvasSize,
     setCanvasSize,
@@ -232,25 +233,48 @@ export function TrackCanvas() {
   }
 
   const selectedSticker = design.stickers.find((s) => s.id === selectedStickerId)
+  const selectedPoint =
+    selectedPointIndex !== null ? design.path[selectedPointIndex] : null
+  const canRemovePoint =
+    selectedPointIndex !== null && design.path.length > MIN_POINTS
 
   const updatePopupPos = useCallback(() => {
     const canvas = canvasRef.current
     const wrap = canvas?.parentElement
-    if (!canvas || !wrap || !selectedSticker) {
+    if (!canvas || !wrap) {
       setPopupCss(null)
       return
     }
-    setPopupCss(
-      canvasToCss(canvas, wrap, {
-        x: selectedSticker.x,
-        y: selectedSticker.y,
-      }),
-    )
-  }, [selectedSticker])
+    if (selectedSticker) {
+      setPopupCss(
+        canvasToCss(canvas, wrap, {
+          x: selectedSticker.x,
+          y: selectedSticker.y,
+        }),
+      )
+      return
+    }
+    if (selectedPoint && canRemovePoint) {
+      setPopupCss(
+        canvasToCss(canvas, wrap, {
+          x: selectedPoint.x,
+          y: selectedPoint.y,
+        }),
+      )
+      return
+    }
+    setPopupCss(null)
+  }, [selectedSticker, selectedPoint, canRemovePoint])
 
   useEffect(() => {
     updatePopupPos()
-  }, [updatePopupPos, design.stickers, selectedStickerId])
+  }, [
+    updatePopupPos,
+    design.stickers,
+    selectedStickerId,
+    design.path,
+    selectedPointIndex,
+  ])
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current
@@ -558,6 +582,8 @@ export function TrackCanvas() {
       if (seg.distance < 28) {
         insertControlPoint(seg.index, seg.closest)
         dragPointRef.current = seg.index + 1
+        setSelectedPointIndex(seg.index + 1)
+        setSelectedStickerId(null)
         return
       }
       setSelectedPointIndex(null)
@@ -668,9 +694,9 @@ export function TrackCanvas() {
       ? `Place ${STICKER_META[pendingSticker].label}: tap the canvas, or drag from the sticker list · tap the sticker again to deselect`
       : selectedSticker
         ? 'Drag to move · Remove in the popup, or press Delete'
-        : selectedPointIndex !== null && design.path.length > MIN_POINTS
-          ? 'Drag handles to reshape · Delete removes selected point'
-          : 'Drag handles to reshape · click a sticker to remove it · click the edge to add a point'
+        : canRemovePoint
+          ? 'Drag the handle to reshape · Remove in the popup, or press Delete'
+          : 'Drag handles to reshape · click a handle to remove it · click the edge to add a point'
 
   return (
     <div className="track-canvas-wrap">
@@ -699,6 +725,25 @@ export function TrackCanvas() {
             onClick={() => {
               removeSticker(selectedSticker.id)
               setSelectedStickerId(null)
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      )}
+
+      {!selectedSticker && canRemovePoint && popupCss && selectedPointIndex !== null && (
+        <div
+          className="sticker-popup"
+          style={{ left: popupCss.x, top: popupCss.y }}
+        >
+          <span className="sticker-popup-label">Handle</span>
+          <button
+            type="button"
+            className="sticker-popup-remove"
+            onClick={() => {
+              removeControlPoint(selectedPointIndex)
+              setSelectedPointIndex(null)
             }}
           >
             Remove
