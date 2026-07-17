@@ -611,11 +611,26 @@ export function RaceView() {
   const chasePlace =
     board.find((r) => r.index === chaseIndex)?.place ?? null
   const fmtRace = (ms: number) => {
-    const s = ms / 1000
-    return s >= 60
-      ? `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, '0')}`
-      : `${s.toFixed(2)}s`
+    const total = Math.max(0, ms) / 1000
+    const m = Math.floor(total / 60)
+    const s = total - m * 60
+    return `${m}:${s.toFixed(3).padStart(6, '0')}`
   }
+  const fmtGap = (ms: number, leaderMs: number) => {
+    if (ms <= leaderMs) return '—'
+    const d = (ms - leaderMs) / 1000
+    return `+${d.toFixed(3)}`
+  }
+  const placeOrdinal = (place: number) => {
+    if (place === 1) return '1st'
+    if (place === 2) return '2nd'
+    if (place === 3) return '3rd'
+    return `${place}th`
+  }
+
+  const results = finishOrder
+  const winner = results[0] ?? null
+  const leaderMs = winner?.timeMs ?? 0
 
   return (
     <div className="race-view" ref={wrapRef}>
@@ -678,43 +693,91 @@ export function RaceView() {
         </div>
       )}
 
-      {raceComplete && (
+      {raceComplete && winner && (
         <div
           className="race-results"
           role="dialog"
           aria-label="Race results"
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <div className="race-results-card">
-            <p className="race-results-kicker">Final standings</p>
-            <h2 className="race-results-title">Leaderboard</h2>
-            <p className="race-results-sub">{lapCount} laps</p>
-            <ol className="race-results-list">
-              {finishOrder.map((row, place) => {
-                const marker =
-                  RACER_MARKER_COLORS[row.index] ?? RACER_MARKER_COLORS[0]
-                return (
-                  <li
-                    key={`${row.id}-${row.index}`}
-                    className={place === 0 ? 'first' : undefined}
-                    style={{ borderLeftColor: marker }}
-                  >
-                    <span className="race-results-place">P{place + 1}</span>
-                    <span
-                      className="race-results-dot"
-                      style={{ background: marker }}
-                      aria-hidden
-                    />
-                    <span className="race-results-name">
-                      {VEHICLE_META[row.id].label}
-                    </span>
-                    <span className="race-results-time">
-                      {fmtRace(row.timeMs)}
-                    </span>
-                  </li>
-                )
-              })}
-            </ol>
+          <div className="race-results-panel">
+            <header className="race-results-winner">
+              <p className="race-results-kicker">Race complete · {lapCount} laps</p>
+              <p className="race-results-winner-player">
+                Player {winner.index + 1}
+              </p>
+              <h2 className="race-results-winner-title">Winner</h2>
+              <p className="race-results-winner-car">
+                <span
+                  className="race-results-winner-dot"
+                  style={{
+                    background:
+                      RACER_MARKER_COLORS[winner.index] ??
+                      RACER_MARKER_COLORS[0],
+                  }}
+                  aria-hidden
+                />
+                {VEHICLE_META[winner.id].label}
+              </p>
+              <p className="race-results-winner-time">
+                {fmtRace(winner.timeMs)}
+              </p>
+            </header>
+
+            <div className="race-results-table" role="table" aria-label="Standings">
+              <div className="race-results-cols" role="row">
+                <span role="columnheader">Pos</span>
+                <span role="columnheader">Driver</span>
+                <span role="columnheader">Time</span>
+                <span role="columnheader">Gap</span>
+              </div>
+              <ol className="race-results-list">
+                {results.map((row, i) => {
+                  const place = i + 1
+                  const marker =
+                    RACER_MARKER_COLORS[row.index] ?? RACER_MARKER_COLORS[0]
+                  return (
+                    <li
+                      key={`${row.id}-${row.index}`}
+                      className={`race-results-row place-${place}`}
+                      style={
+                        {
+                          '--row-accent': marker,
+                          '--row-delay': `${0.12 + i * 0.1}s`,
+                        } as React.CSSProperties
+                      }
+                      role="row"
+                    >
+                      <span className="race-results-place" role="cell">
+                        {placeOrdinal(place)}
+                      </span>
+                      <span className="race-results-driver" role="cell">
+                        <span
+                          className="race-results-dot"
+                          style={{ background: marker }}
+                          aria-hidden
+                        />
+                        <span className="race-results-driver-text">
+                          <span className="race-results-player">
+                            Player {row.index + 1}
+                          </span>
+                          <span className="race-results-car">
+                            {VEHICLE_META[row.id].label}
+                          </span>
+                        </span>
+                      </span>
+                      <span className="race-results-time" role="cell">
+                        {fmtRace(row.timeMs)}
+                      </span>
+                      <span className="race-results-gap" role="cell">
+                        {fmtGap(row.timeMs, leaderMs)}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ol>
+            </div>
+
             <button
               type="button"
               className="race-results-restart"
