@@ -107,6 +107,8 @@ export function RaceBroadcastPublisher({
 
     const onHello = (ev: MessageEvent) => {
       if (ev.data?.type === 'spectate-hello') {
+        // Re-send session once so a late map can bind, then push poses.
+        // Map ignores duplicate active announces for the same session.
         announce(true)
         publish(true)
       }

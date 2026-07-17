@@ -142,22 +142,22 @@ function SpectateRacer({
     const list = samples.current
     if (list.length === 0) return
 
+    // First pose: show immediately so the map isn’t blank while the buffer fills
+    if (!visible.current) {
+      const latest = list[list.length - 1]
+      g.position.set(latest.x, latest.y, latest.z)
+      g.quaternion.set(latest.qx, latest.qy, latest.qz, latest.qw)
+      visible.current = true
+      g.visible = true
+      return
+    }
+
     const renderAt = performance.now() - MAP_POSE_DELAY_MS
     let i = 0
     while (i < list.length - 1 && list[i + 1].t <= renderAt) i++
 
     const a = list[i]
     const b = list[Math.min(i + 1, list.length - 1)]
-
-    if (!visible.current) {
-      // Wait until the delayed clock reaches the first sample
-      if (renderAt < a.t) return
-      g.position.set(a.x, a.y, a.z)
-      g.quaternion.set(a.qx, a.qy, a.qz, a.qw)
-      visible.current = true
-      g.visible = true
-      return
-    }
 
     if (a === b || b.t <= a.t) {
       g.position.set(a.x, a.y, a.z)
@@ -356,6 +356,8 @@ export function SpectatorView() {
         const sessionMsg = msg as RaceSessionMessage
         if (!sessionMsg.session) return
         if (sessionMsg.active) {
+          // Same session re-announce (hello reply) — do not clear poses / remount
+          if (local.session === sessionMsg.session) return
           adoptRaceSession(local, sessionMsg.session)
           reloadDesignFromStorage()
           setBoard([])
@@ -366,7 +368,6 @@ export function SpectatorView() {
             countdown: null,
           }))
           setRaceEpoch((n) => n + 1)
-          ch?.postMessage({ type: 'spectate-hello' })
           return
         }
         // Race left / Start over — only clear if it was our session
