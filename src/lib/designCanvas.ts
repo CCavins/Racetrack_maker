@@ -39,3 +39,24 @@ export function designToCssPos(
     y: (p.y / DESIGN_CANVAS_H) * rect.height,
   }
 }
+
+/**
+ * Logical design point → CSS pixels relative to a positioned ancestor
+ * (accounts for letterboxed canvas offset inside the wrap).
+ */
+export function designToCssPosInParent(
+  p: { x: number; y: number },
+  el: HTMLElement,
+  parent: HTMLElement,
+): { x: number; y: number } {
+  const elRect = el.getBoundingClientRect()
+  const parentRect = parent.getBoundingClientRect()
+  return {
+    x:
+      (p.x / DESIGN_CANVAS_W) * elRect.width +
+      (elRect.left - parentRect.left),
+    y:
+      (p.y / DESIGN_CANVAS_H) * elRect.height +
+      (elRect.top - parentRect.top),
+  }
+}

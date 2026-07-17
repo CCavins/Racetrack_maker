@@ -4,7 +4,7 @@ import {
   DESIGN_CANVAS_H,
   DESIGN_CANVAS_W,
   clientToDesignPos,
-  designToCssPos,
+  designToCssPosInParent,
 } from '../lib/designCanvas'
 import {
   createCirclePath,
@@ -63,8 +63,12 @@ function getCanvasPos(
   return { x, y }
 }
 
-function canvasToCss(canvas: HTMLCanvasElement, p: Vec2): Vec2 {
-  return designToCssPos(p, canvas)
+function canvasToCss(
+  canvas: HTMLCanvasElement,
+  wrap: HTMLElement,
+  p: Vec2,
+): Vec2 {
+  return designToCssPosInParent(p, canvas, wrap)
 }
 
 function drawTrackBand(
@@ -231,11 +235,17 @@ export function TrackCanvas() {
 
   const updatePopupPos = useCallback(() => {
     const canvas = canvasRef.current
-    if (!canvas || !selectedSticker) {
+    const wrap = canvas?.parentElement
+    if (!canvas || !wrap || !selectedSticker) {
       setPopupCss(null)
       return
     }
-    setPopupCss(canvasToCss(canvas, { x: selectedSticker.x, y: selectedSticker.y }))
+    setPopupCss(
+      canvasToCss(canvas, wrap, {
+        x: selectedSticker.x,
+        y: selectedSticker.y,
+      }),
+    )
   }, [selectedSticker])
 
   useEffect(() => {
@@ -524,6 +534,18 @@ export function TrackCanvas() {
       return
     }
 
+    // Stickers are always selectable (incl. Reshape) so Remove stays reachable
+    if (tool === 'reshape' || tool === 'select' || tool === 'sticker') {
+      const stickerHit = hitTestSticker(pos)
+      if (stickerHit) {
+        setSelectedStickerId(stickerHit)
+        setSelectedPointIndex(null)
+        dragStickerRef.current = stickerHit
+        if (tool === 'sticker' || tool === 'reshape') setTool('select')
+        return
+      }
+    }
+
     if (tool === 'reshape') {
       const pt = hitTestPoint(design.path, pos, hitRadius)
       if (pt >= 0) {
@@ -539,18 +561,11 @@ export function TrackCanvas() {
         return
       }
       setSelectedPointIndex(null)
+      setSelectedStickerId(null)
       return
     }
 
     if (tool === 'select' || tool === 'sticker') {
-      const stickerHit = hitTestSticker(pos)
-      if (stickerHit) {
-        setSelectedStickerId(stickerHit)
-        setSelectedPointIndex(null)
-        dragStickerRef.current = stickerHit
-        setTool('select')
-        return
-      }
       const pt = hitTestPoint(design.path, pos, hitRadius)
       if (pt >= 0) {
         dragPointRef.current = pt
@@ -651,9 +666,11 @@ export function TrackCanvas() {
   const hint =
     tool === 'sticker' && pendingSticker
       ? `Place ${STICKER_META[pendingSticker].label}: tap the canvas, or drag from the sticker list · tap the sticker again to deselect`
-      : selectedPointIndex !== null && design.path.length > MIN_POINTS
-        ? 'Drag handles to reshape · Delete removes selected point'
-        : 'Drag handles to reshape · click the edge to add a point'
+      : selectedSticker
+        ? 'Drag to move · Remove in the popup, or press Delete'
+        : selectedPointIndex !== null && design.path.length > MIN_POINTS
+          ? 'Drag handles to reshape · Delete removes selected point'
+          : 'Drag handles to reshape · click a sticker to remove it · click the edge to add a point'
 
   return (
     <div className="track-canvas-wrap">
